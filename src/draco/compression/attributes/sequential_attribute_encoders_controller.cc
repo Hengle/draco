@@ -13,7 +13,9 @@
 // limitations under the License.
 //
 #include "draco/compression/attributes/sequential_attribute_encoders_controller.h"
+#ifdef DRACO_NORMAL_ENCODING_SUPPORTED
 #include "draco/compression/attributes/sequential_normal_attribute_encoder.h"
+#endif
 #include "draco/compression/attributes/sequential_quantization_attribute_encoder.h"
 #include "draco/compression/point_cloud/point_cloud_encoder.h"
 
@@ -27,16 +29,16 @@ SequentialAttributeEncodersController::SequentialAttributeEncodersController(
     std::unique_ptr<PointsSequencer> sequencer, int att_id)
     : AttributesEncoder(att_id), sequencer_(std::move(sequencer)) {}
 
-bool SequentialAttributeEncodersController::Initialize(
-    PointCloudEncoder *encoder, const PointCloud *pc) {
-  if (!AttributesEncoder::Initialize(encoder, pc))
+bool SequentialAttributeEncodersController::Init(PointCloudEncoder *encoder,
+                                                 const PointCloud *pc) {
+  if (!AttributesEncoder::Init(encoder, pc))
     return false;
   if (!CreateSequentialEncoders())
     return false;
   // Initialize all value encoders.
-  for (int i = 0; i < num_attributes(); ++i) {
+  for (uint32_t i = 0; i < num_attributes(); ++i) {
     const int32_t att_id = GetAttributeId(i);
-    if (!sequential_encoders_[i]->Initialize(encoder, att_id))
+    if (!sequential_encoders_[i]->Init(encoder, att_id))
       return false;
   }
   return true;
@@ -92,7 +94,7 @@ bool SequentialAttributeEncodersController::
 
 bool SequentialAttributeEncodersController::CreateSequentialEncoders() {
   sequential_encoders_.resize(num_attributes());
-  for (int i = 0; i < num_attributes(); ++i) {
+  for (uint32_t i = 0; i < num_attributes(); ++i) {
     sequential_encoders_[i] = CreateSequentialEncoder(i);
     if (sequential_encoders_[i] == nullptr)
       return false;
@@ -121,15 +123,19 @@ SequentialAttributeEncodersController::CreateSequentialEncoder(int i) {
     case DT_FLOAT32:
       if (encoder()->options()->GetAttributeInt(att_id, "quantization_bits",
                                                 -1) > 0) {
+#ifdef DRACO_NORMAL_ENCODING_SUPPORTED
         if (att->attribute_type() == GeometryAttribute::NORMAL) {
           // We currently only support normals with float coordinates
           // and must be quantized.
           return std::unique_ptr<SequentialAttributeEncoder>(
               new SequentialNormalAttributeEncoder());
         } else {
+#endif
           return std::unique_ptr<SequentialAttributeEncoder>(
               new SequentialQuantizationAttributeEncoder());
+#ifdef DRACO_NORMAL_ENCODING_SUPPORTED
         }
+#endif
       }
       break;
     default:

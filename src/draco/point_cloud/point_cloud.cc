@@ -25,7 +25,7 @@ int32_t PointCloud::NumNamedAttributes(GeometryAttribute::Type type) const {
   if (type == GeometryAttribute::INVALID ||
       type >= GeometryAttribute::NAMED_ATTRIBUTES_COUNT)
     return 0;
-  return named_attribute_index_[type].size();
+  return static_cast<int32_t>(named_attribute_index_[type].size());
 }
 
 int32_t PointCloud::GetNamedAttributeId(GeometryAttribute::Type type) const {
@@ -74,36 +74,45 @@ const PointAttribute *PointCloud::GetAttributeByUniqueId(
 int32_t PointCloud::GetAttributeIdByUniqueId(uint32_t unique_id) const {
   for (size_t att_id = 0; att_id < attributes_.size(); ++att_id) {
     if (attributes_[att_id]->unique_id() == unique_id)
-      return att_id;
+      return static_cast<int32_t>(att_id);
   }
   return -1;
 }
 
 int PointCloud::AddAttribute(std::unique_ptr<PointAttribute> pa) {
-  SetAttribute(attributes_.size(), std::move(pa));
-  return attributes_.size() - 1;
+  SetAttribute(static_cast<int>(attributes_.size()), std::move(pa));
+  return static_cast<int>(attributes_.size() - 1);
 }
 
 int PointCloud::AddAttribute(
     const GeometryAttribute &att, bool identity_mapping,
     AttributeValueIndex::ValueType num_attribute_values) {
-  const GeometryAttribute::Type type = att.attribute_type();
-  if (type == GeometryAttribute::INVALID)
+  auto pa = CreateAttribute(att, identity_mapping, num_attribute_values);
+  if (!pa)
     return -1;
-  const int32_t att_id =
-      AddAttribute(std::unique_ptr<PointAttribute>(new PointAttribute(att)));
+  const int32_t att_id = AddAttribute(std::move(pa));
+  return att_id;
+}
+
+std::unique_ptr<PointAttribute> PointCloud::CreateAttribute(
+    const GeometryAttribute &att, bool identity_mapping,
+    AttributeValueIndex::ValueType num_attribute_values) const {
+  if (att.attribute_type() == GeometryAttribute::INVALID)
+    return nullptr;
+  std::unique_ptr<PointAttribute> pa =
+      std::unique_ptr<PointAttribute>(new PointAttribute(att));
   // Initialize point cloud specific attribute data.
   if (!identity_mapping) {
     // First create mapping between indices.
-    attribute(att_id)->SetExplicitMapping(num_points_);
+    pa->SetExplicitMapping(num_points_);
   } else {
-    attribute(att_id)->SetIdentityMapping();
-    attribute(att_id)->Resize(num_points_);
+    pa->SetIdentityMapping();
+    pa->Resize(num_points_);
   }
   if (num_attribute_values > 0) {
-    attribute(att_id)->Reset(num_attribute_values);
+    pa->Reset(num_attribute_values);
   }
-  return att_id;
+  return pa;
 }
 
 void PointCloud::SetAttribute(int att_id, std::unique_ptr<PointAttribute> pa) {
@@ -148,14 +157,14 @@ void PointCloud::DeleteAttribute(int att_id) {
   }
 }
 
-#ifdef DRACO_ATTRIBUTE_DEDUPLICATION_SUPPORTED
+#ifdef DRACO_ATTRIBUTE_INDICES_DEDUPLICATION_SUPPORTED
 void PointCloud::DeduplicatePointIds() {
   // Hashing function for a single vertex.
   auto point_hash = [this](PointIndex p) {
     PointIndex::ValueType hash = 0;
     for (int32_t i = 0; i < this->num_attributes(); ++i) {
       const AttributeValueIndex att_id = attribute(i)->mapped_index(p);
-      hash = HashCombine(att_id.value(), hash);
+      hash = static_cast<uint32_t>(HashCombine(att_id.value(), hash));
     }
     return hash;
   };
@@ -214,7 +223,9 @@ void PointCloud::ApplyPointIdDeduplication(
     attribute(a)->SetExplicitMapping(num_unique_points);
   }
 }
+#endif
 
+#ifdef DRACO_ATTRIBUTE_VALUES_DEDUPLICATION_SUPPORTED
 bool PointCloud::DeduplicateAttributeValues() {
   // Go over all attributes and create mapping between duplicate entries.
   if (num_points() == 0)
@@ -228,4 +239,28 @@ bool PointCloud::DeduplicateAttributeValues() {
 }
 #endif
 
+// TODO(xiaoxumeng): Consider to cash the BBox.
+BoundingBox PointCloud::ComputeBoundingBox() const {
+  BoundingBox bounding_box =
+      BoundingBox(Vector3f(std::numeric_limits<float>::max(),
+                           std::numeric_limits<float>::max(),
+                           std::numeric_limits<float>::max()),
+                  Vector3f(-std::numeric_limits<float>::max(),
+                           -std::numeric_limits<float>::max(),
+                           -std::numeric_limits<float>::max()));
+  auto pc_att = GetNamedAttribute(GeometryAttribute::POSITION);
+  // TODO(xiaoxumeng): Make the BoundingBox a template type, it may not be easy
+  // because PointCloud is not a template.
+  // Or simply add some preconditioning here to make sure the position attribute
+  // is valid, because the current code works only if the position attribute is
+  // defined with 3 components of DT_FLOAT32.
+  // Consider using pc_att->ConvertValue<float, 3>(i, &p[0]) (Enforced
+  // transformation from Vector with any dimension to Vector3f)
+  Vector3f p;
+  for (AttributeValueIndex i(0); i < pc_att->size(); ++i) {
+    pc_att->GetValue(i, &p[0]);
+    bounding_box.update_bounding_box(p);
+  }
+  return bounding_box;
+}
 }  // namespace draco

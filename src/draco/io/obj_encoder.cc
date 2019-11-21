@@ -37,6 +37,7 @@ bool ObjEncoder::EncodeToFile(const PointCloud &pc,
   std::ofstream file(file_name);
   if (!file)
     return false;  // File could not be opened.
+  file_name_ = file_name;
   // Encode the mesh into a buffer.
   EncoderBuffer buffer;
   if (!EncodeToBuffer(pc, &buffer))
@@ -99,6 +100,7 @@ bool ObjEncoder::ExitAndCleanup(bool return_value) {
   sub_obj_att_ = nullptr;
   current_sub_obj_id_ = -1;
   current_material_id_ = -1;
+  file_name_.clear();
   return return_value;
 }
 
@@ -127,13 +129,15 @@ bool ObjEncoder::GetSubObjects() {
 
 bool ObjEncoder::EncodeMaterialFileName() {
   const GeometryMetadata *pc_metadata = in_point_cloud_->GetMetadata();
-  if (!pc_metadata)
-    return true;
-  const AttributeMetadata *material_metadata =
-      pc_metadata->GetAttributeMetadataByStringEntry("name", "material");
+  const AttributeMetadata *material_metadata = nullptr;
+  if (pc_metadata) {
+    material_metadata =
+        pc_metadata->GetAttributeMetadataByStringEntry("name", "material");
+  }
+  std::string material_file_name;
+  std::string material_full_path;
   if (!material_metadata)
     return true;
-  std::string material_file_name;
   if (!material_metadata->GetEntryString("file_name", &material_file_name))
     return false;
   buffer()->Encode("mtllib ", 7);
@@ -161,7 +165,7 @@ bool ObjEncoder::EncodePositions() {
   if (att == nullptr || att->size() == 0)
     return false;  // Position attribute must be valid.
   std::array<float, 3> value;
-  for (AttributeValueIndex i(0); i < att->size(); ++i) {
+  for (AttributeValueIndex i(0); i < static_cast<uint32_t>(att->size()); ++i) {
     if (!att->ConvertValue<float, 3>(i, &value[0]))
       return false;
     buffer()->Encode("v ", 2);
@@ -178,7 +182,7 @@ bool ObjEncoder::EncodeTextureCoordinates() {
   if (att == nullptr || att->size() == 0)
     return true;  // It's OK if we don't have texture coordinates.
   std::array<float, 2> value;
-  for (AttributeValueIndex i(0); i < att->size(); ++i) {
+  for (AttributeValueIndex i(0); i < static_cast<uint32_t>(att->size()); ++i) {
     if (!att->ConvertValue<float, 2>(i, &value[0]))
       return false;
     buffer()->Encode("vt ", 3);
@@ -195,7 +199,7 @@ bool ObjEncoder::EncodeNormals() {
   if (att == nullptr || att->size() == 0)
     return true;  // It's OK if we don't have normals.
   std::array<float, 3> value;
-  for (AttributeValueIndex i(0); i < att->size(); ++i) {
+  for (AttributeValueIndex i(0); i < static_cast<uint32_t>(att->size()); ++i) {
     if (!att->ConvertValue<float, 3>(i, &value[0]))
       return false;
     buffer()->Encode("vn ", 3);

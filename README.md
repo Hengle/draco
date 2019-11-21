@@ -5,6 +5,27 @@
 
 News
 =======
+### Version 1.3.5 release
+* Added option to build Draco for Universal Scene Description
+* Code cleanup
+* Bug fixes
+
+### Version 1.3.4 release
+* Released Draco Animation code
+* Fixes for Unity
+* Various file location and name changes
+
+### Version 1.3.3 release
+* Added ExpertEncoder to the Javascript API
+  * Allows developers to set quantization options per attribute id
+* Bug fixes
+
+### Version 1.3.2 release
+* Bug fixes
+
+### Version 1.3.1 release
+* Fix issue with multiple attributes when skipping an attribute transform
+
 ### Version 1.3.0 release
 * Improved kD-tree based point cloud encoding
   * Now applicable to point clouds with any number of attributes
@@ -51,6 +72,7 @@ _**Contents**_
       * [Googletest Integration](#googletest-integration)
       * [Javascript Encoder/Decoder](#javascript-encoderdecoder)
     * [Android Studio Project Integration](#android-studio-project-integration)
+    * [Native Android Builds](#native-android-builds)
   * [Usage](#usage)
     * [Command Line Applications](#command-line-applications)
     * [Encoding Tool](#encoding-tool)
@@ -299,10 +321,7 @@ To add Draco to your project:
              externalNativeBuild {
                  cmake {
                      cppFlags "-std=c++11"
-                     cppFlags "-DDRACO_POINT_CLOUD_COMPRESSION_SUPPORTED"
-                     cppFlags "-DDRACO_MESH_COMPRESSION_SUPPORTED"
-                     cppFlags "-DDRACO_STANDARD_EDGEBREAKER_SUPPORTED"
-                     cppFlags "-DDRACO_PREDICTIVE_EDGEBREAKER_SUPPORTED"
+                     arguments "-DANDROID_STL=c++_shared"
                  }
              }
          }
@@ -312,6 +331,37 @@ To add Draco to your project:
              }
          }
      }
+
+Native Android Builds
+---------------------
+
+It's sometimes useful to build Draco command line tools and run them directly on
+Android devices via adb.
+
+~~~~~ bash
+# All targets require CMAKE_ANDROID_NDK. It must be set in the environment.
+$ export CMAKE_ANDROID_NDK=path/to/ndk
+
+# arm
+$ cmake path/to/draco -DCMAKE_TOOLCHAIN_FILE=path/to/draco/cmake/toolchains/armv7-android-ndk-libcpp.cmake
+$ make
+
+# arm64
+$ cmake path/to/draco -DCMAKE_TOOLCHAIN_FILE=path/to/draco/cmake/toolchains/arm64-android-ndk-libcpp.cmake
+$ make
+
+# x86
+$ cmake path/to/draco -DCMAKE_TOOLCHAIN_FILE=path/to/draco/cmake/toolchains/x86-android-ndk-libcpp.cmake
+$ make
+
+# x86_64
+$ cmake path/to/draco -DCMAKE_TOOLCHAIN_FILE=path/to/draco/cmake/toolchains/x86_64-android-ndk-libcpp.cmake
+$ make
+~~~~~
+
+After building the tools they can be moved to an android device via the use of
+`adb push`, and then run within an `adb shell` instance.
+
 
 Usage
 ======
@@ -525,7 +575,7 @@ The Javascript decoder is built with dynamic memory. This will let the decoder
 work with all of the compressed data. But this option is not the fastest.
 Pre-allocating the memory sees about a 2x decoder speed improvement. If you
 know all of your project's memory requirements, you can turn on static memory
-by changing `Makefile.emcc` and running `make -f Makefile.emcc`.
+by changing `CMakeLists.txt` accordingly.
 
 Metadata API
 ------------

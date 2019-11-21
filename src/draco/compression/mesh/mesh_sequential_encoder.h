@@ -42,8 +42,10 @@ class MeshSequentialEncoder : public MeshEncoder {
   }
 
  protected:
-  bool EncodeConnectivity() override;
+  Status EncodeConnectivity() override;
   bool GenerateAttributesEncoder(int32_t att_id) override;
+  void ComputeNumberOfEncodedPoints() override;
+  void ComputeNumberOfEncodedFaces() override;
 
  private:
   // Returns false on error.

@@ -42,7 +42,7 @@ class PredictionSchemeNormalOctahedronDecodingTransform
   PredictionSchemeNormalOctahedronDecodingTransform() {}
 
   // Dummy function to fulfill concept.
-  void Initialize(int num_components) {}
+  void Init(int num_components) {}
   bool DecodeTransformData(DecoderBuffer *buffer) {
     DataTypeT max_quantized_value, center_value;
     if (!buffer->Decode(&max_quantized_value))
@@ -51,9 +51,8 @@ class PredictionSchemeNormalOctahedronDecodingTransform
       if (!buffer->Decode(&center_value))
         return false;
     }
-    this->set_max_quantized_value(max_quantized_value);
     (void)center_value;
-    return true;
+    return this->set_max_quantized_value(max_quantized_value);
   }
 
   inline void ComputeOriginalValue(const DataType *pred_vals,

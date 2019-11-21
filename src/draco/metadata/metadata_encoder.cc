@@ -20,8 +20,7 @@ namespace draco {
 
 bool MetadataEncoder::EncodeMetadata(EncoderBuffer *out_buffer,
                                      const Metadata *metadata) {
-  const std::unordered_map<std::string, EntryValue> &entries =
-      metadata->entries();
+  const std::map<std::string, EntryValue> &entries = metadata->entries();
   // Encode number of entries.
   EncodeVarint(static_cast<uint32_t>(metadata->num_entries()), out_buffer);
   // Encode all entries.
@@ -29,12 +28,12 @@ bool MetadataEncoder::EncodeMetadata(EncoderBuffer *out_buffer,
     if (!EncodeString(out_buffer, entry.first))
       return false;
     const std::vector<uint8_t> &entry_value = entry.second.data();
-    const uint32_t data_size = entry_value.size();
+    const uint32_t data_size = static_cast<uint32_t>(entry_value.size());
     EncodeVarint(data_size, out_buffer);
     out_buffer->Encode(entry_value.data(), data_size);
   }
-  const std::unordered_map<std::string, std::unique_ptr<Metadata>>
-      &sub_metadatas = metadata->sub_metadatas();
+  const std::map<std::string, std::unique_ptr<Metadata>> &sub_metadatas =
+      metadata->sub_metadatas();
   // Encode number of sub-metadata
   EncodeVarint(static_cast<uint32_t>(sub_metadatas.size()), out_buffer);
   // Encode each sub-metadata
@@ -64,7 +63,7 @@ bool MetadataEncoder::EncodeGeometryMetadata(EncoderBuffer *out_buffer,
   // Encode number of attribute metadata.
   const std::vector<std::unique_ptr<AttributeMetadata>> &att_metadatas =
       metadata->attribute_metadatas();
-  // TODO(zhafang): Limit the number of attributes.
+  // TODO(draco-eng): Limit the number of attributes.
   EncodeVarint(static_cast<uint32_t>(att_metadatas.size()), out_buffer);
   // Encode each attribute metadata
   for (auto &&att_metadata : att_metadatas) {

@@ -51,7 +51,6 @@ namespace draco {
 // non-manifold edges and vertices are automatically split.
 class CornerTable {
  public:
-  // TODO(hemmer): rename to Face.
   // Corner table face type.
   typedef std::array<VertexIndex, 3> FaceType;
 
@@ -62,7 +61,7 @@ class CornerTable {
   // Initializes the CornerTable from provides set of indexed faces.
   // The input faces can represent a non-manifold topology, in which case the
   // non-manifold edges and vertices are going to be split.
-  bool Initialize(const IndexTypeVector<FaceIndex, FaceType> &faces);
+  bool Init(const IndexTypeVector<FaceIndex, FaceType> &faces);
 
   // Resets the corner table to the given number of invalid faces.
   bool Reset(int num_faces);
@@ -70,9 +69,15 @@ class CornerTable {
   // Resets the corner table to the given number of invalid faces and vertices.
   bool Reset(int num_faces, int num_vertices);
 
-  inline int num_vertices() const { return vertex_corners_.size(); }
-  inline int num_corners() const { return corner_to_vertex_map_.size(); }
-  inline int num_faces() const { return corner_to_vertex_map_.size() / 3; }
+  inline int num_vertices() const {
+    return static_cast<int>(vertex_corners_.size());
+  }
+  inline int num_corners() const {
+    return static_cast<int>(corner_to_vertex_map_.size());
+  }
+  inline int num_faces() const {
+    return static_cast<int>(corner_to_vertex_map_.size() / 3);
+  }
 
   inline CornerIndex Opposite(CornerIndex corner) const {
     if (corner == kInvalidCornerIndex)
@@ -141,7 +146,7 @@ class CornerTable {
 
   // Returns the parent vertex index of a given corner table vertex.
   VertexIndex VertexParent(VertexIndex vertex) const {
-    if (vertex.value() < num_original_vertices_)
+    if (vertex.value() < static_cast<uint32_t>(num_original_vertices_))
       return vertex;
     return non_manifold_vertex_parents_[vertex - num_original_vertices_];
   }
@@ -252,7 +257,7 @@ class CornerTable {
     DRACO_DCHECK(GetValenceCache().IsCacheEmpty());
     // Add a new invalid vertex.
     vertex_corners_.push_back(kInvalidCornerIndex);
-    return VertexIndex(vertex_corners_.size() - 1);
+    return VertexIndex(static_cast<uint32_t>(vertex_corners_.size() - 1));
   }
 
   // Sets a new left most corner for a given vertex.
@@ -327,9 +332,13 @@ class CornerTable {
 
  private:
   // Computes opposite corners mapping from the data stored in
-  // |corner_to_vertex_map_|. Any non-manifold edge will be split so the result
-  // is always a 2-manifold surface.
+  // |corner_to_vertex_map_|.
   bool ComputeOppositeCorners(int *num_vertices);
+
+  // Finds and breaks non-manifold edges in the 1-ring neighborhood around
+  // vertices (vertices themselves will be split in the ComputeVertexCorners()
+  // function if necessary).
+  bool BreakNonManifoldEdges();
 
   // Computes the lookup map for going from a vertex to a corner. This method
   // can handle non-manifold vertices by splitting them into multiple manifold

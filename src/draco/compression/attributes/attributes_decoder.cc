@@ -21,7 +21,7 @@ namespace draco {
 AttributesDecoder::AttributesDecoder()
     : point_cloud_decoder_(nullptr), point_cloud_(nullptr) {}
 
-bool AttributesDecoder::Initialize(PointCloudDecoder *decoder, PointCloud *pc) {
+bool AttributesDecoder::Init(PointCloudDecoder *decoder, PointCloud *pc) {
   point_cloud_decoder_ = decoder;
   point_cloud_ = pc;
   return true;
@@ -45,7 +45,7 @@ bool AttributesDecoder::DecodeAttributesDecoderData(DecoderBuffer *in_buffer) {
     return false;
   point_attribute_ids_.resize(num_attributes);
   PointCloud *pc = point_cloud_;
-  for (int i = 0; i < num_attributes; ++i) {
+  for (uint32_t i = 0; i < num_attributes; ++i) {
     // Decode attribute descriptor data.
     uint8_t att_type, data_type, num_components, normalized;
     if (!in_buffer->Decode(&att_type))
@@ -72,7 +72,7 @@ bool AttributesDecoder::DecodeAttributesDecoderData(DecoderBuffer *in_buffer) {
       uint16_t custom_id;
       if (!in_buffer->Decode(&custom_id))
         return false;
-      // TODO(zhafang): Add "custom_id" to attribute metadata.
+      // TODO(draco-eng): Add "custom_id" to attribute metadata.
       unique_id = static_cast<uint32_t>(custom_id);
       ga.set_unique_id(unique_id);
     } else

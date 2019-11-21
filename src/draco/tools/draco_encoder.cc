@@ -157,7 +157,7 @@ int EncodePointCloudToFile(const draco::PointCloud &pc, const std::string &file,
     return -1;
   }
   out_file.write(buffer.data(), buffer.size());
-  printf("Encoded point cloud saved to %s (%" PRId64 " ms to encode)\n",
+  printf("Encoded point cloud saved to %s (%" PRId64 " ms to encode).\n",
          file.c_str(), timer.GetInMs());
   printf("\nEncoded size = %zu bytes\n\n", buffer.size());
   return 0;
@@ -183,7 +183,7 @@ int EncodeMeshToFile(const draco::Mesh &mesh, const std::string &file,
     return -1;
   }
   out_file.write(buffer.data(), buffer.size());
-  printf("Encoded mesh saved to %s (%" PRId64 " ms to encode)\n", file.c_str(),
+  printf("Encoded mesh saved to %s (%" PRId64 " ms to encode).\n", file.c_str(),
          timer.GetInMs());
   printf("\nEncoded size = %zu bytes\n\n", buffer.size());
   return 0;
@@ -193,7 +193,6 @@ int EncodeMeshToFile(const draco::Mesh &mesh, const std::string &file,
 
 int main(int argc, char **argv) {
   Options options;
-  draco::Encoder encoder;
   const int argc_check = argc - 1;
 
   for (int i = 1; i < argc; ++i) {
@@ -317,7 +316,7 @@ int main(int argc, char **argv) {
           pc->GetNamedAttributeId(draco::GeometryAttribute::GENERIC, 0));
     }
   }
-#ifdef DRACO_ATTRIBUTE_DEDUPLICATION_SUPPORTED
+#ifdef DRACO_ATTRIBUTE_INDICES_DEDUPLICATION_SUPPORTED
   // If any attribute has been deleted, run deduplication of point indices again
   // as some points can be possibly combined.
   if (options.tex_coords_deleted || options.normals_deleted ||
@@ -328,6 +327,8 @@ int main(int argc, char **argv) {
 
   // Convert compression level to speed (that 0 = slowest, 10 = fastest).
   const int speed = 10 - options.compression_level;
+
+  draco::Encoder encoder;
 
   // Setup encoder options.
   if (options.pos_quantization_bits > 0) {
@@ -356,15 +357,16 @@ int main(int argc, char **argv) {
   PrintOptions(*pc.get(), options);
 
   int ret = -1;
-  if (mesh && mesh->num_faces() > 0)
+  const bool input_is_mesh = mesh && mesh->num_faces() > 0;
+  if (input_is_mesh)
     ret = EncodeMeshToFile(*mesh, options.output, &encoder);
   else
     ret = EncodePointCloudToFile(*pc.get(), options.output, &encoder);
 
   if (ret != -1 && options.compression_level < 10) {
     printf(
-        "For better compression, increase the compression level '-cl' (up to "
-        "10).\n\n");
+        "For better compression, increase the compression level up to '-cl 10' "
+        ".\n\n");
   }
 
   return ret;

@@ -17,10 +17,10 @@
 
 #include "draco/draco_features.h"
 
+#include "draco/compression/bit_coders/rans_bit_decoder.h"
 #include "draco/compression/mesh/mesh_edgebreaker_decoder.h"
 #include "draco/compression/mesh/mesh_edgebreaker_decoder_impl_interface.h"
 #include "draco/compression/mesh/mesh_edgebreaker_shared.h"
-#include "draco/core/bit_coders/rans_bit_decoder.h"
 
 namespace draco {
 
@@ -28,13 +28,13 @@ typedef RAnsBitDecoder BinaryDecoder;
 
 // Default implementation of the edgebreaker traversal decoder that reads the
 // traversal data directly from a buffer.
-class MeshEdgeBreakerTraversalDecoder {
+class MeshEdgebreakerTraversalDecoder {
  public:
-  MeshEdgeBreakerTraversalDecoder()
+  MeshEdgebreakerTraversalDecoder()
       : attribute_connectivity_decoders_(nullptr),
         num_attribute_data_(0),
         decoder_impl_(nullptr) {}
-  void Init(MeshEdgeBreakerDecoderImplInterface *decoder) {
+  void Init(MeshEdgebreakerDecoderImplInterface *decoder) {
     decoder_impl_ = decoder;
     buffer_.Init(decoder->GetDecoder()->buffer()->data_head(),
                  decoder->GetDecoder()->buffer()->remaining_size(),
@@ -78,6 +78,7 @@ class MeshEdgeBreakerTraversalDecoder {
 #ifdef DRACO_BACKWARDS_COMPATIBILITY_SUPPORTED
     if (buffer_.bitstream_version() < DRACO_BITSTREAM_VERSION(2, 2)) {
       start_face_buffer_.DecodeLeastSignificantBits32(1, &face_configuration);
+
     } else
 #endif
     {
@@ -122,6 +123,7 @@ class MeshEdgeBreakerTraversalDecoder {
 #ifdef DRACO_BACKWARDS_COMPATIBILITY_SUPPORTED
     if (buffer_.bitstream_version() < DRACO_BITSTREAM_VERSION(2, 2)) {
       start_face_buffer_.EndBitDecoding();
+
     } else
 #endif
     {
@@ -138,7 +140,7 @@ class MeshEdgeBreakerTraversalDecoder {
     if (!symbol_buffer_.StartBitDecoding(true, &traversal_size))
       return false;
     buffer_ = symbol_buffer_;
-    if (traversal_size > buffer_.remaining_size())
+    if (traversal_size > static_cast<uint64_t>(buffer_.remaining_size()))
       return false;
     buffer_.Advance(traversal_size);
     return true;
@@ -153,15 +155,13 @@ class MeshEdgeBreakerTraversalDecoder {
       if (!start_face_buffer_.StartBitDecoding(true, &traversal_size))
         return false;
       buffer_ = start_face_buffer_;
-      if (traversal_size > buffer_.remaining_size())
+      if (traversal_size > static_cast<uint64_t>(buffer_.remaining_size()))
         return false;
       buffer_.Advance(traversal_size);
-    } else
-#endif
-    {
-      start_face_decoder_.StartDecoding(&buffer_);
+      return true;
     }
-    return true;
+#endif
+    return start_face_decoder_.StartDecoding(&buffer_);
   }
 
   bool DecodeAttributeSeams() {
@@ -185,7 +185,7 @@ class MeshEdgeBreakerTraversalDecoder {
   DecoderBuffer start_face_buffer_;
   std::unique_ptr<BinaryDecoder[]> attribute_connectivity_decoders_;
   int num_attribute_data_;
-  const MeshEdgeBreakerDecoderImplInterface *decoder_impl_;
+  const MeshEdgebreakerDecoderImplInterface *decoder_impl_;
 };
 
 }  // namespace draco

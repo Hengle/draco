@@ -32,12 +32,27 @@
 #include <iostream>
 namespace draco {
 
+#ifndef DISALLOW_COPY_AND_ASSIGN
 #define DISALLOW_COPY_AND_ASSIGN(TypeName) \
   TypeName(const TypeName &) = delete;     \
   void operator=(const TypeName &) = delete;
+#endif
 
 #ifndef FALLTHROUGH_INTENDED
-#define FALLTHROUGH_INTENDED void(0);
+#if defined(__clang__) && defined(__has_warning)
+#if __has_feature(cxx_attributes) && __has_warning("-Wimplicit-fallthrough")
+#define FALLTHROUGH_INTENDED [[clang::fallthrough]]
+#endif
+#elif defined(__GNUC__) && __GNUC__ >= 7
+#define FALLTHROUGH_INTENDED [[gnu::fallthrough]]
+#endif
+
+// If FALLTHROUGH_INTENDED is still not defined, define it.
+#ifndef FALLTHROUGH_INTENDED
+#define FALLTHROUGH_INTENDED \
+  do {                       \
+  } while (0)
+#endif
 #endif
 
 #ifndef LOG
@@ -81,11 +96,16 @@ namespace draco {
 // #define FUNC_2(x, y) x + y
 // #define FUNC_3(x, y, z) x + y + z
 //
-// #define VARIADIC_MACRO(...)                                                 \
+// #define VARIADIC_MACRO(...)
 //   DRACO_SELECT_NTH_FROM_3(__VA_ARGS__, FUNC_3, FUNC_2, FUNC_1) __VA_ARGS__
 //
 #define DRACO_SELECT_NTH_FROM_2(_1, _2, NAME) NAME
 #define DRACO_SELECT_NTH_FROM_3(_1, _2, _3, NAME) NAME
 #define DRACO_SELECT_NTH_FROM_4(_1, _2, _3, _4, NAME) NAME
+
+// Macro that converts the Draco bit-stream into one uint16_t number.
+// Useful mostly when checking version numbers.
+#define DRACO_BITSTREAM_VERSION(MAJOR, MINOR) \
+  ((static_cast<uint16_t>(MAJOR) << 8) | MINOR)
 
 #endif  // DRACO_CORE_MACROS_H_

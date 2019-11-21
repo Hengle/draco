@@ -22,8 +22,8 @@ SequentialAttributeEncoder::SequentialAttributeEncoder()
       attribute_id_(-1),
       is_parent_encoder_(false) {}
 
-bool SequentialAttributeEncoder::Initialize(PointCloudEncoder *encoder,
-                                            int attribute_id) {
+bool SequentialAttributeEncoder::Init(PointCloudEncoder *encoder,
+                                      int attribute_id) {
   encoder_ = encoder;
   attribute_ = encoder_->point_cloud()->attribute(attribute_id);
   attribute_id_ = attribute_id;
@@ -59,7 +59,7 @@ bool SequentialAttributeEncoder::EncodeDataNeededByPortableTransform(
 
 bool SequentialAttributeEncoder::EncodeValues(
     const std::vector<PointIndex> &point_ids, EncoderBuffer *out_buffer) {
-  const int entry_size = attribute_->byte_stride();
+  const int entry_size = static_cast<int>(attribute_->byte_stride());
   const std::unique_ptr<uint8_t[]> value_data_ptr(new uint8_t[entry_size]);
   uint8_t *const value_data = value_data_ptr.get();
   // Encode all attribute values in their native raw format.

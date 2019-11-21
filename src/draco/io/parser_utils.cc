@@ -25,7 +25,7 @@ namespace parser {
 void SkipCharacters(DecoderBuffer *buffer, const char *skip_chars) {
   if (skip_chars == nullptr)
     return;
-  const int num_skip_chars = strlen(skip_chars);
+  const int num_skip_chars = static_cast<int>(strlen(skip_chars));
   char c;
   while (buffer->Peek(&c)) {
     // Check all characters in the pattern.
@@ -128,11 +128,11 @@ bool ParseFloat(DecoderBuffer *buffer, float *value) {
         return false;
 
       // Apply exponent scaling to value.
-      v *= pow(10.0, exponent);
+      v *= pow(static_cast<double>(10.0), exponent);
     }
   }
 
-  *value = (sign < 0) ? -v : v;
+  *value = (sign < 0) ? static_cast<float>(-v) : static_cast<float>(v);
   return true;
 }
 

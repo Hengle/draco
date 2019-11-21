@@ -23,10 +23,15 @@ namespace draco {
 
 namespace {
 static constexpr char kTestDataDir[] = DRACO_TEST_DATA_DIR;
+static constexpr char kTestTempDir[] = DRACO_TEST_TEMP_DIR;
 }  // namespace
 
 std::string GetTestFileFullPath(const std::string &file_name) {
   return std::string(kTestDataDir) + std::string("/") + file_name;
+}
+
+std::string GetTestTempFileFullPath(const std::string &file_name) {
+  return std::string(kTestTempDir) + std::string("/") + file_name;
 }
 
 bool GenerateGoldenFile(const std::string &golden_file_name, const void *data,
@@ -43,7 +48,7 @@ bool GenerateGoldenFile(const std::string &golden_file_name, const void *data,
 bool CompareGoldenFile(const std::string &golden_file_name, const void *data,
                        int data_size) {
   const std::string golden_path = GetTestFileFullPath(golden_file_name);
-  std::ifstream in_file(golden_path);
+  std::ifstream in_file(golden_path, std::ios::binary);
   if (!in_file || data_size < 0)
     return false;
   const char *const data_c8 = static_cast<const char *>(data);

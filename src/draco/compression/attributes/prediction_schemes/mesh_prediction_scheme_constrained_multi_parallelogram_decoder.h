@@ -23,7 +23,7 @@
 #include "draco/compression/attributes/prediction_schemes/mesh_prediction_scheme_constrained_multi_parallelogram_shared.h"
 #include "draco/compression/attributes/prediction_schemes/mesh_prediction_scheme_decoder.h"
 #include "draco/compression/attributes/prediction_schemes/mesh_prediction_scheme_parallelogram_shared.h"
-#include "draco/core/bit_coders/rans_bit_decoder.h"
+#include "draco/compression/bit_coders/rans_bit_decoder.h"
 #include "draco/core/varint_decoding.h"
 
 namespace draco {
@@ -84,7 +84,7 @@ bool MeshPredictionSchemeConstrainedMultiParallelogramDecoder<
     ComputeOriginalValues(const CorrType *in_corr, DataTypeT *out_data,
                           int /* size */, int num_components,
                           const PointIndex * /* entry_to_point_id_map */) {
-  this->transform().Initialize(num_components);
+  this->transform().Init(num_components);
 
   // Predicted values for all simple parallelograms encountered at any given
   // vertex.
@@ -105,7 +105,8 @@ bool MeshPredictionSchemeConstrainedMultiParallelogramDecoder<
   // Used to store predicted value for multi-parallelogram prediction.
   std::vector<DataTypeT> multi_pred_vals(num_components);
 
-  const int corner_map_size = this->mesh_data().data_to_corner_map()->size();
+  const int corner_map_size =
+      static_cast<int>(this->mesh_data().data_to_corner_map()->size());
   for (int p = 1; p < corner_map_size; ++p) {
     const CornerIndex start_corner_id =
         this->mesh_data().data_to_corner_map()->at(p);
@@ -152,8 +153,10 @@ bool MeshPredictionSchemeConstrainedMultiParallelogramDecoder<
       // Check which parallelograms are actually used.
       for (int i = 0; i < num_parallelograms; ++i) {
         const int context = num_parallelograms - 1;
-        const bool is_crease =
-            is_crease_edge_[context][is_crease_edge_pos[context]++];
+        const int pos = is_crease_edge_pos[context]++;
+        if (is_crease_edge_[context].size() <= pos)
+          return false;
+        const bool is_crease = is_crease_edge_[context][pos];
         if (!is_crease) {
           ++num_used_parallelograms;
           for (int j = 0; j < num_components; ++j) {
@@ -207,8 +210,9 @@ bool MeshPredictionSchemeConstrainedMultiParallelogramDecoder<
     if (num_flags > 0) {
       is_crease_edge_[i].resize(num_flags);
       RAnsBitDecoder decoder;
-      decoder.StartDecoding(buffer);
-      for (int j = 0; j < num_flags; ++j) {
+      if (!decoder.StartDecoding(buffer))
+        return false;
+      for (uint32_t j = 0; j < num_flags; ++j) {
         is_crease_edge_[i][j] = decoder.DecodeNextBit();
       }
       decoder.EndDecoding();

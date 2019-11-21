@@ -67,7 +67,7 @@ class PointAttribute : public GeometryAttribute {
 
   // Sets the new number of unique attribute entries for the attribute.
   void Resize(size_t new_num_unique_entries) {
-    num_unique_entries_ = new_num_unique_entries;
+    num_unique_entries_ = static_cast<uint32_t>(new_num_unique_entries);
   }
 
   // Functions for setting the type of mapping between point indices and
@@ -105,7 +105,7 @@ class PointAttribute : public GeometryAttribute {
     return GetValue(mapped_index(point_index), out_data);
   }
 
-#ifdef DRACO_ATTRIBUTE_DEDUPLICATION_SUPPORTED
+#ifdef DRACO_ATTRIBUTE_VALUES_DEDUPLICATION_SUPPORTED
   // Deduplicate |in_att| values into |this| attribute. |in_att| can be equal
   // to |this|.
   // Returns -1 if the deduplication failed.
@@ -130,7 +130,7 @@ class PointAttribute : public GeometryAttribute {
   }
 
  private:
-#ifdef DRACO_ATTRIBUTE_DEDUPLICATION_SUPPORTED
+#ifdef DRACO_ATTRIBUTE_VALUES_DEDUPLICATION_SUPPORTED
   template <typename T>
   AttributeValueIndex::ValueType DeduplicateTypedValues(
       const GeometryAttribute &in_att, AttributeValueIndex in_att_offset);

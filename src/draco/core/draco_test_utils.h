@@ -21,8 +21,13 @@
 
 namespace draco {
 
-// Returns the full path to a given test file.
-std::string GetTestFileFullPath(const std::string &file_name);
+// Returns the full path to a given file system entry, such as test file or test
+// directory.
+std::string GetTestFileFullPath(const std::string &entry_name);
+
+// Returns the full path to a given temporary file (a location where tests store
+// generated files).
+std::string GetTestTempFileFullPath(const std::string &file_name);
 
 // Generates a new golden file and saves it into the correct folder.
 // Returns false if the file couldn't be created.
@@ -47,6 +52,11 @@ inline std::unique_ptr<Mesh> ReadMeshFromTestFile(const std::string &file_name,
                                                   bool use_metadata) {
   const std::string path = GetTestFileFullPath(file_name);
   return ReadMeshFromFile(path, use_metadata).value();
+}
+inline std::unique_ptr<Mesh> ReadMeshFromTestFile(const std::string &file_name,
+                                                  const Options &options) {
+  const std::string path = GetTestFileFullPath(file_name);
+  return ReadMeshFromFile(path, options).value();
 }
 
 inline std::unique_ptr<PointCloud> ReadPointCloudFromTestFile(

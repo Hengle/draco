@@ -19,7 +19,7 @@
 namespace draco {
 
 PointCloudEncoder::PointCloudEncoder()
-    : point_cloud_(nullptr), buffer_(nullptr) {}
+    : point_cloud_(nullptr), buffer_(nullptr), num_encoded_points_(0) {}
 
 void PointCloudEncoder::SetPointCloud(const PointCloud &pc) {
   point_cloud_ = &pc;
@@ -36,17 +36,18 @@ Status PointCloudEncoder::Encode(const EncoderOptions &options,
   attributes_encoder_ids_order_.clear();
 
   if (!point_cloud_)
-    return Status(Status::ERROR, "Invalid input geometry.");
+    return Status(Status::DRACO_ERROR, "Invalid input geometry.");
   DRACO_RETURN_IF_ERROR(EncodeHeader())
   DRACO_RETURN_IF_ERROR(EncodeMetadata())
   if (!InitializeEncoder())
-    return Status(Status::ERROR, "Failed to initialize encoder.");
+    return Status(Status::DRACO_ERROR, "Failed to initialize encoder.");
   if (!EncodeEncoderData())
-    return Status(Status::ERROR, "Failed to encode internal data.");
-  if (!EncodeGeometryData())
-    return Status(Status::ERROR, "Failed to encode geometry data.");
+    return Status(Status::DRACO_ERROR, "Failed to encode internal data.");
+  DRACO_RETURN_IF_ERROR(EncodeGeometryData());
   if (!EncodePointAttributes())
-    return Status(Status::ERROR, "Failed to encode point attributes.");
+    return Status(Status::DRACO_ERROR, "Failed to encode point attributes.");
+  if (options.GetGlobalBool("store_number_of_encoded_points", false))
+    ComputeNumberOfEncodedPoints();
   return OkStatus();
 }
 
@@ -85,7 +86,7 @@ Status PointCloudEncoder::EncodeMetadata() {
   MetadataEncoder metadata_encoder;
   if (!metadata_encoder.EncodeGeometryMetadata(buffer_,
                                                point_cloud_->GetMetadata())) {
-    return Status(Status::ERROR, "Failed to encode metadata.");
+    return Status(Status::DRACO_ERROR, "Failed to encode metadata.");
   }
   return OkStatus();
 }
@@ -100,7 +101,7 @@ bool PointCloudEncoder::EncodePointAttributes() {
   // Initialize all the encoders (this is used for example to init attribute
   // dependencies, no data is encoded in this step).
   for (auto &att_enc : attributes_encoders_) {
-    if (!att_enc->Initialize(this, point_cloud_))
+    if (!att_enc->Init(this, point_cloud_))
       return false;
   }
 
@@ -136,7 +137,7 @@ bool PointCloudEncoder::GenerateAttributesEncoders() {
   }
   attribute_to_encoder_map_.resize(point_cloud_->num_attributes());
   for (uint32_t i = 0; i < attributes_encoders_.size(); ++i) {
-    for (int j = 0; j < attributes_encoders_[i]->num_attributes(); ++j) {
+    for (uint32_t j = 0; j < attributes_encoders_[i]->num_attributes(); ++j) {
       attribute_to_encoder_map_[attributes_encoders_[i]->GetAttributeId(j)] = i;
     }
   }
@@ -196,7 +197,7 @@ bool PointCloudEncoder::RearrangeAttributesEncoders() {
         continue;  // Encoder already processed.
       // Check if all parent encoders are already processed.
       bool can_be_processed = true;
-      for (int p = 0; p < attributes_encoders_[i]->num_attributes(); ++p) {
+      for (uint32_t p = 0; p < attributes_encoders_[i]->num_attributes(); ++p) {
         const int32_t att_id = attributes_encoders_[i]->GetAttributeId(p);
         for (int ap = 0;
              ap < attributes_encoders_[i]->NumParentAttributes(att_id); ++ap) {

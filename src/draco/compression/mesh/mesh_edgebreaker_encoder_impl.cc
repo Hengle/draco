@@ -16,25 +16,26 @@
 
 #include <algorithm>
 
-#include "draco/compression/attributes/mesh_attribute_indices_encoding_observer.h"
 #include "draco/compression/attributes/sequential_attribute_encoders_controller.h"
 #include "draco/compression/mesh/mesh_edgebreaker_encoder.h"
 #include "draco/compression/mesh/mesh_edgebreaker_traversal_predictive_encoder.h"
 #include "draco/compression/mesh/mesh_edgebreaker_traversal_valence_encoder.h"
+#include "draco/compression/mesh/traverser/depth_first_traverser.h"
+#include "draco/compression/mesh/traverser/max_prediction_degree_traverser.h"
+#include "draco/compression/mesh/traverser/mesh_attribute_indices_encoding_observer.h"
+#include "draco/compression/mesh/traverser/mesh_traversal_sequencer.h"
+#include "draco/compression/mesh/traverser/traverser_base.h"
 #include "draco/mesh/corner_table_iterators.h"
-#include "draco/mesh/corner_table_traversal_processor.h"
-#include "draco/mesh/edgebreaker_traverser.h"
 #include "draco/mesh/mesh_misc_functions.h"
-#include "draco/mesh/prediction_degree_traverser.h"
 
 namespace draco {
-// TODO() consider converting 'typedef' to 'using' and deduplicate.
+// TODO(draco-eng) consider converting 'typedef' to 'using' and deduplicate.
 typedef CornerIndex CornerIndex;
 typedef FaceIndex FaceIndex;
 typedef VertexIndex VertexIndex;
 
 template <class TraversalEncoder>
-MeshEdgeBreakerEncoderImpl<TraversalEncoder>::MeshEdgeBreakerEncoderImpl()
+MeshEdgebreakerEncoderImpl<TraversalEncoder>::MeshEdgebreakerEncoderImpl()
     : encoder_(nullptr),
       mesh_(nullptr),
       last_encoded_symbol_id_(-1),
@@ -42,8 +43,8 @@ MeshEdgeBreakerEncoderImpl<TraversalEncoder>::MeshEdgeBreakerEncoderImpl()
       use_single_connectivity_(false) {}
 
 template <class TraversalEncoder>
-bool MeshEdgeBreakerEncoderImpl<TraversalEncoder>::Init(
-    MeshEdgeBreakerEncoder *encoder) {
+bool MeshEdgebreakerEncoderImpl<TraversalEncoder>::Init(
+    MeshEdgebreakerEncoder *encoder) {
   encoder_ = encoder;
   mesh_ = encoder->mesh();
   attribute_encoder_to_data_id_map_.clear();
@@ -62,7 +63,7 @@ bool MeshEdgeBreakerEncoderImpl<TraversalEncoder>::Init(
 
 template <class TraversalEncoder>
 const MeshAttributeCornerTable *
-MeshEdgeBreakerEncoderImpl<TraversalEncoder>::GetAttributeCornerTable(
+MeshEdgebreakerEncoderImpl<TraversalEncoder>::GetAttributeCornerTable(
     int att_id) const {
   for (uint32_t i = 0; i < attribute_data_.size(); ++i) {
     if (attribute_data_[i].attribute_index == att_id) {
@@ -76,7 +77,7 @@ MeshEdgeBreakerEncoderImpl<TraversalEncoder>::GetAttributeCornerTable(
 
 template <class TraversalEncoder>
 const MeshAttributeIndicesEncodingData *
-MeshEdgeBreakerEncoderImpl<TraversalEncoder>::GetAttributeEncodingData(
+MeshEdgebreakerEncoderImpl<TraversalEncoder>::GetAttributeEncodingData(
     int att_id) const {
   for (uint32_t i = 0; i < attribute_data_.size(); ++i) {
     if (attribute_data_[i].attribute_index == att_id)
@@ -88,29 +89,28 @@ MeshEdgeBreakerEncoderImpl<TraversalEncoder>::GetAttributeEncodingData(
 template <class TraversalEncoder>
 template <class TraverserT>
 std::unique_ptr<PointsSequencer>
-MeshEdgeBreakerEncoderImpl<TraversalEncoder>::CreateVertexTraversalSequencer(
+MeshEdgebreakerEncoderImpl<TraversalEncoder>::CreateVertexTraversalSequencer(
     MeshAttributeIndicesEncodingData *encoding_data) {
   typedef typename TraverserT::TraversalObserver AttObserver;
-  typedef typename TraverserT::TraversalProcessor AttProcessor;
+  typedef typename TraverserT::CornerTable CornerTable;
 
   std::unique_ptr<MeshTraversalSequencer<TraverserT>> traversal_sequencer(
       new MeshTraversalSequencer<TraverserT>(mesh_, encoding_data));
 
-  AttProcessor att_processor;
   AttObserver att_observer(corner_table_.get(), mesh_,
                            traversal_sequencer.get(), encoding_data);
+
   TraverserT att_traverser;
+  att_traverser.Init(corner_table_.get(), att_observer);
 
-  att_processor.ResetProcessor(corner_table_.get());
-  att_traverser.Init(std::move(att_processor), att_observer);
-
+  // Set order of corners to simulate the corner order of the decoder.
   traversal_sequencer->SetCornerOrder(processed_connectivity_corners_);
   traversal_sequencer->SetTraverser(att_traverser);
   return std::move(traversal_sequencer);
 }
 
 template <class TraversalEncoder>
-bool MeshEdgeBreakerEncoderImpl<TraversalEncoder>::GenerateAttributesEncoder(
+bool MeshEdgebreakerEncoderImpl<TraversalEncoder>::GenerateAttributesEncoder(
     int32_t att_id) {
   // For now, either create one encoder for each attribute or use a single
   // encoder for all attributes. Ideally we can share the same encoder for
@@ -142,15 +142,19 @@ bool MeshEdgeBreakerEncoderImpl<TraversalEncoder>::GenerateAttributesEncoder(
        attribute_data_[att_data_id].connectivity_data.no_interior_seams())) {
     // Per-vertex attribute reached, use the basic corner table to traverse the
     // mesh.
-    typedef CornerTableTraversalProcessor<CornerTable> AttProcessor;
-    typedef MeshAttributeIndicesEncodingObserver<CornerTable> AttObserver;
-
     MeshAttributeIndicesEncodingData *encoding_data;
     if (use_single_connectivity_ ||
         att->attribute_type() == GeometryAttribute::POSITION) {
       encoding_data = &pos_encoding_data_;
     } else {
       encoding_data = &attribute_data_[att_data_id].encoding_data;
+
+      // Ensure we use the correct number of vertices in the encoding data.
+      encoding_data->vertex_to_encoded_attribute_value_index_map.assign(
+          corner_table_->num_vertices(), -1);
+
+      // Mark the attribute specific connectivity data as not used as we use the
+      // position attribute connectivity data.
       attribute_data_[att_data_id].is_connectivity_used = false;
     }
 
@@ -165,40 +169,44 @@ bool MeshEdgeBreakerEncoderImpl<TraversalEncoder>::GenerateAttributesEncoder(
         traversal_method = MESH_TRAVERSAL_DEPTH_FIRST;
       }
     }
+    // Defining sequencer via a traversal scheme.
     if (traversal_method == MESH_TRAVERSAL_PREDICTION_DEGREE) {
-      // Traverser that is used to generate the encoding order of each
-      // attribute.
-      typedef PredictionDegreeTraverser<AttProcessor, AttObserver> AttTraverser;
+      typedef MeshAttributeIndicesEncodingObserver<CornerTable> AttObserver;
+      typedef MaxPredictionDegreeTraverser<CornerTable, AttObserver>
+          AttTraverser;
       sequencer = CreateVertexTraversalSequencer<AttTraverser>(encoding_data);
-    } else {
-      // Traverser that is used to generate the encoding order of each
-      // attribute.
-      typedef EdgeBreakerTraverser<AttProcessor, AttObserver> AttTraverser;
+    } else if (traversal_method == MESH_TRAVERSAL_DEPTH_FIRST) {
+      typedef MeshAttributeIndicesEncodingObserver<CornerTable> AttObserver;
+      typedef DepthFirstTraverser<CornerTable, AttObserver> AttTraverser;
       sequencer = CreateVertexTraversalSequencer<AttTraverser>(encoding_data);
     }
   } else {
-    // Else use a general per-corner encoder.
-    typedef CornerTableTraversalProcessor<MeshAttributeCornerTable>
-        AttProcessor;
+    // Per-corner attribute encoder.
     typedef MeshAttributeIndicesEncodingObserver<MeshAttributeCornerTable>
         AttObserver;
-    // Traverser that is used to generate the encoding order of each attribute.
-    typedef EdgeBreakerTraverser<AttProcessor, AttObserver> AttTraverser;
+    typedef DepthFirstTraverser<MeshAttributeCornerTable, AttObserver>
+        AttTraverser;
+
+    MeshAttributeIndicesEncodingData *const encoding_data =
+        &attribute_data_[att_data_id].encoding_data;
+    const MeshAttributeCornerTable *const corner_table =
+        &attribute_data_[att_data_id].connectivity_data;
+
+    // Ensure we use the correct number of vertices in the encoding data.
+    attribute_data_[att_data_id]
+        .encoding_data.vertex_to_encoded_attribute_value_index_map.assign(
+            attribute_data_[att_data_id].connectivity_data.num_vertices(), -1);
 
     std::unique_ptr<MeshTraversalSequencer<AttTraverser>> traversal_sequencer(
-        new MeshTraversalSequencer<AttTraverser>(
-            mesh_, &attribute_data_[att_data_id].encoding_data));
+        new MeshTraversalSequencer<AttTraverser>(mesh_, encoding_data));
 
-    AttProcessor att_processor;
-    AttObserver att_observer(&attribute_data_[att_data_id].connectivity_data,
-                             mesh_, traversal_sequencer.get(),
-                             &attribute_data_[att_data_id].encoding_data);
+    AttObserver att_observer(corner_table, mesh_, traversal_sequencer.get(),
+                             encoding_data);
+
     AttTraverser att_traverser;
+    att_traverser.Init(corner_table, att_observer);
 
-    att_processor.ResetProcessor(
-        &attribute_data_[att_data_id].connectivity_data);
-    att_traverser.Init(att_processor, att_observer);
-
+    // Set order of corners to simulate the corner order of the decoder.
     traversal_sequencer->SetCornerOrder(processed_connectivity_corners_);
     traversal_sequencer->SetTraverser(att_traverser);
     sequencer = std::move(traversal_sequencer);
@@ -222,10 +230,10 @@ bool MeshEdgeBreakerEncoderImpl<TraversalEncoder>::GenerateAttributesEncoder(
   attribute_encoder_to_data_id_map_.push_back(att_data_id);
   GetEncoder()->AddAttributesEncoder(std::move(att_controller));
   return true;
-}
+}  // namespace draco
 
 template <class TraversalEncoder>
-bool MeshEdgeBreakerEncoderImpl<TraversalEncoder>::
+bool MeshEdgebreakerEncoderImpl<TraversalEncoder>::
     EncodeAttributesEncoderIdentifier(int32_t att_encoder_id) {
   const int8_t att_data_id = attribute_encoder_to_data_id_map_[att_encoder_id];
   encoder_->buffer()->Encode(att_data_id);
@@ -255,7 +263,7 @@ bool MeshEdgeBreakerEncoderImpl<TraversalEncoder>::
 }
 
 template <class TraversalEncoder>
-bool MeshEdgeBreakerEncoderImpl<TraversalEncoder>::EncodeConnectivity() {
+Status MeshEdgebreakerEncoderImpl<TraversalEncoder>::EncodeConnectivity() {
   // To encode the mesh, we need face connectivity data stored in a corner
   // table. To compute the connectivity we must use indices associated with
   // POSITION attribute, because they define which edges can be connected
@@ -271,7 +279,7 @@ bool MeshEdgeBreakerEncoderImpl<TraversalEncoder>::EncodeConnectivity() {
       corner_table_->num_faces() == corner_table_->NumDegeneratedFaces()) {
     // Failed to construct the corner table.
     // TODO(ostava): Add better error reporting.
-    return false;
+    return Status(Status::DRACO_ERROR, "All triangles are degenerate.");
   }
 
   traversal_encoder_.Init(this);
@@ -309,12 +317,13 @@ bool MeshEdgeBreakerEncoderImpl<TraversalEncoder>::EncodeConnectivity() {
   pos_encoding_data_.num_values = 0;
 
   if (!FindHoles())
-    return false;
+    return Status(Status::DRACO_ERROR, "Failed to process mesh holes.");
 
   if (!InitAttributeData())
-    return false;
+    return Status(Status::DRACO_ERROR, "Failed to initialize attribute data.");
 
-  const uint8_t num_attribute_data = attribute_data_.size();
+  const uint8_t num_attribute_data =
+      static_cast<uint8_t>(attribute_data_.size());
   encoder_->buffer()->Encode(num_attribute_data);
   traversal_encoder_.SetNumAttributeData(num_attribute_data);
 
@@ -367,7 +376,7 @@ bool MeshEdgeBreakerEncoderImpl<TraversalEncoder>::EncodeConnectivity() {
       if (opp_face_id != kInvalidFaceIndex &&
           !visited_faces_[opp_face_id.value()]) {
         if (!EncodeConnectivityFromCorner(opp_id))
-          return false;
+          return Status(Status::DRACO_ERROR, "Failed to encode mesh component.");
       }
     } else {
       // Boundary configuration. We start on a boundary rather than on a face.
@@ -376,7 +385,7 @@ bool MeshEdgeBreakerEncoderImpl<TraversalEncoder>::EncodeConnectivity() {
       // Start processing the face opposite to the boundary edge (the face
       // containing the start_corner).
       if (!EncodeConnectivityFromCorner(start_corner))
-        return false;
+        return Status(Status::DRACO_ERROR, "Failed to encode mesh component.");
     }
   }
   // Reverse the order of connectivity corners to match the order in which
@@ -408,16 +417,17 @@ bool MeshEdgeBreakerEncoderImpl<TraversalEncoder>::EncodeConnectivity() {
 
   // Append the traversal buffer.
   if (!EncodeSplitData())
-    return false;
+    return Status(Status::DRACO_ERROR, "Failed to encode split data.");
   encoder_->buffer()->Encode(traversal_encoder_.buffer().data(),
                              traversal_encoder_.buffer().size());
 
-  return true;
+  return OkStatus();
 }
 
 template <class TraversalEncoder>
-bool MeshEdgeBreakerEncoderImpl<TraversalEncoder>::EncodeSplitData() {
-  uint32_t num_events = topology_split_event_data_.size();
+bool MeshEdgebreakerEncoderImpl<TraversalEncoder>::EncodeSplitData() {
+  uint32_t num_events =
+      static_cast<uint32_t>(topology_split_event_data_.size());
   EncodeVarint(num_events, encoder_->buffer());
   if (num_events > 0) {
     // Encode split symbols using delta and varint coding. Split edges are
@@ -451,7 +461,7 @@ bool MeshEdgeBreakerEncoderImpl<TraversalEncoder>::EncodeSplitData() {
 }
 
 template <class TraversalEncoder>
-bool MeshEdgeBreakerEncoderImpl<TraversalEncoder>::FindInitFaceConfiguration(
+bool MeshEdgebreakerEncoderImpl<TraversalEncoder>::FindInitFaceConfiguration(
     FaceIndex face_id, CornerIndex *out_corner) const {
   CornerIndex corner_index = CornerIndex(3 * face_id.value());
   for (int i = 0; i < 3; ++i) {
@@ -482,7 +492,7 @@ bool MeshEdgeBreakerEncoderImpl<TraversalEncoder>::FindInitFaceConfiguration(
 }
 
 template <class TraversalEncoder>
-bool MeshEdgeBreakerEncoderImpl<TraversalEncoder>::EncodeConnectivityFromCorner(
+bool MeshEdgebreakerEncoderImpl<TraversalEncoder>::EncodeConnectivityFromCorner(
     CornerIndex corner_id) {
   corner_traversal_stack_.clear();
   corner_traversal_stack_.push_back(corner_id);
@@ -593,7 +603,7 @@ bool MeshEdgeBreakerEncoderImpl<TraversalEncoder>::EncodeConnectivityFromCorner(
 }
 
 template <class TraversalEncoder>
-int MeshEdgeBreakerEncoderImpl<TraversalEncoder>::EncodeHole(
+int MeshEdgebreakerEncoderImpl<TraversalEncoder>::EncodeHole(
     CornerIndex start_corner_id, bool encode_first_vertex) {
   // We know that the start corner lies on a hole but we first need to find the
   // boundary edge going from that vertex. It is the first edge in CW
@@ -641,21 +651,21 @@ int MeshEdgeBreakerEncoderImpl<TraversalEncoder>::EncodeHole(
 }
 
 template <class TraversalEncoder>
-CornerIndex MeshEdgeBreakerEncoderImpl<TraversalEncoder>::GetRightCorner(
+CornerIndex MeshEdgebreakerEncoderImpl<TraversalEncoder>::GetRightCorner(
     CornerIndex corner_id) const {
   const CornerIndex next_corner_id = corner_table_->Next(corner_id);
   return corner_table_->Opposite(next_corner_id);
 }
 
 template <class TraversalEncoder>
-CornerIndex MeshEdgeBreakerEncoderImpl<TraversalEncoder>::GetLeftCorner(
+CornerIndex MeshEdgebreakerEncoderImpl<TraversalEncoder>::GetLeftCorner(
     CornerIndex corner_id) const {
   const CornerIndex prev_corner_id = corner_table_->Previous(corner_id);
   return corner_table_->Opposite(prev_corner_id);
 }
 
 template <class TraversalEncoder>
-bool MeshEdgeBreakerEncoderImpl<TraversalEncoder>::IsRightFaceVisited(
+bool MeshEdgebreakerEncoderImpl<TraversalEncoder>::IsRightFaceVisited(
     CornerIndex corner_id) const {
   const CornerIndex next_corner_id = corner_table_->Next(corner_id);
   const CornerIndex opp_corner_id = corner_table_->Opposite(next_corner_id);
@@ -666,7 +676,7 @@ bool MeshEdgeBreakerEncoderImpl<TraversalEncoder>::IsRightFaceVisited(
 }
 
 template <class TraversalEncoder>
-bool MeshEdgeBreakerEncoderImpl<TraversalEncoder>::IsLeftFaceVisited(
+bool MeshEdgebreakerEncoderImpl<TraversalEncoder>::IsLeftFaceVisited(
     CornerIndex corner_id) const {
   const CornerIndex prev_corner_id = corner_table_->Previous(corner_id);
   const CornerIndex opp_corner_id = corner_table_->Opposite(prev_corner_id);
@@ -677,7 +687,7 @@ bool MeshEdgeBreakerEncoderImpl<TraversalEncoder>::IsLeftFaceVisited(
 }
 
 template <class TraversalEncoder>
-bool MeshEdgeBreakerEncoderImpl<TraversalEncoder>::FindHoles() {
+bool MeshEdgebreakerEncoderImpl<TraversalEncoder>::FindHoles() {
   // TODO(ostava): Add more error checking for invalid geometry data.
   const int num_corners = corner_table_->num_corners();
   // Go over all corners and detect non-visited open boundaries
@@ -697,7 +707,7 @@ bool MeshEdgeBreakerEncoderImpl<TraversalEncoder>::FindHoles() {
       }
       // Else we found a new open boundary and we are going to traverse along it
       // and mark all visited vertices.
-      const int boundary_id = visited_holes_.size();
+      const int boundary_id = static_cast<int>(visited_holes_.size());
       visited_holes_.push_back(false);
 
       CornerIndex corner_id = i;
@@ -720,7 +730,7 @@ bool MeshEdgeBreakerEncoderImpl<TraversalEncoder>::FindHoles() {
 }
 
 template <class TraversalEncoder>
-int MeshEdgeBreakerEncoderImpl<TraversalEncoder>::GetSplitSymbolIdOnFace(
+int MeshEdgebreakerEncoderImpl<TraversalEncoder>::GetSplitSymbolIdOnFace(
     int face_id) const {
   auto it = face_to_split_symbol_map_.find(face_id);
   if (it == face_to_split_symbol_map_.end())
@@ -729,7 +739,7 @@ int MeshEdgeBreakerEncoderImpl<TraversalEncoder>::GetSplitSymbolIdOnFace(
 }
 
 template <class TraversalEncoder>
-void MeshEdgeBreakerEncoderImpl<
+void MeshEdgebreakerEncoderImpl<
     TraversalEncoder>::CheckAndStoreTopologySplitEvent(int src_symbol_id,
                                                        int /* src_face_id */,
                                                        EdgeFaceName src_edge,
@@ -746,7 +756,7 @@ void MeshEdgeBreakerEncoderImpl<
 }
 
 template <class TraversalEncoder>
-bool MeshEdgeBreakerEncoderImpl<TraversalEncoder>::InitAttributeData() {
+bool MeshEdgebreakerEncoderImpl<TraversalEncoder>::InitAttributeData() {
   if (use_single_connectivity_)
     return true;  // All attributes use the same connectivity.
 
@@ -768,9 +778,6 @@ bool MeshEdgeBreakerEncoderImpl<TraversalEncoder>::InitAttributeData() {
     attribute_data_[data_index]
         .encoding_data.encoded_attribute_value_index_to_corner_map.reserve(
             corner_table_->num_corners());
-    attribute_data_[data_index]
-        .encoding_data.vertex_to_encoded_attribute_value_index_map.assign(
-            corner_table_->num_corners(), -1);
     attribute_data_[data_index].encoding_data.num_values = 0;
     attribute_data_[data_index].connectivity_data.InitFromAttribute(
         mesh_, corner_table_.get(), att);
@@ -785,7 +792,7 @@ bool MeshEdgeBreakerEncoderImpl<TraversalEncoder>::InitAttributeData() {
 // scheme for such cases, or at least deduplicating the attributes in the
 // decoder.
 template <class TraversalEncoder>
-bool MeshEdgeBreakerEncoderImpl<
+bool MeshEdgebreakerEncoderImpl<
     TraversalEncoder>::EncodeAttributeConnectivitiesOnFace(CornerIndex corner) {
   // Three corners of the face.
   const CornerIndex corners[3] = {corner, corner_table_->Next(corner),
@@ -814,10 +821,10 @@ bool MeshEdgeBreakerEncoderImpl<
   return true;
 }
 
-template class MeshEdgeBreakerEncoderImpl<MeshEdgeBreakerTraversalEncoder>;
-template class MeshEdgeBreakerEncoderImpl<
-    MeshEdgeBreakerTraversalPredictiveEncoder>;
-template class MeshEdgeBreakerEncoderImpl<
-    MeshEdgeBreakerTraversalValenceEncoder>;
+template class MeshEdgebreakerEncoderImpl<MeshEdgebreakerTraversalEncoder>;
+template class MeshEdgebreakerEncoderImpl<
+    MeshEdgebreakerTraversalPredictiveEncoder>;
+template class MeshEdgebreakerEncoderImpl<
+    MeshEdgebreakerTraversalValenceEncoder>;
 
 }  // namespace draco

@@ -16,10 +16,16 @@
 
 #include <cstdlib>
 #include <string>
+#include <utility>
 
 namespace draco {
 
 Options::Options() {}
+
+void Options::MergeAndReplace(const Options &other_options) {
+  for (const auto &item : other_options.options_)
+    options_[item.first] = item.second;
+}
 
 void Options::SetInt(const std::string &name, int val) {
   options_[name] = std::to_string(val);
@@ -54,7 +60,7 @@ float Options::GetFloat(const std::string &name, float default_val) const {
   const auto it = options_.find(name);
   if (it == options_.end())
     return default_val;
-  return std::atof(it->second.c_str());
+  return static_cast<float>(std::atof(it->second.c_str()));
 }
 
 bool Options::GetBool(const std::string &name) const {

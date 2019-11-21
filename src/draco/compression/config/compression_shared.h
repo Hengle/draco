@@ -17,6 +17,8 @@
 
 #include <stdint.h>
 
+#include "draco/core/macros.h"
+
 #include "draco/draco_features.h"
 
 namespace draco {
@@ -27,11 +29,6 @@ static constexpr uint8_t kDracoPointCloudBitstreamVersionMinor = 3;
 static constexpr uint8_t kDracoMeshBitstreamVersionMajor = 2;
 static constexpr uint8_t kDracoMeshBitstreamVersionMinor = 2;
 
-// Macro that converts the Draco bit-stream into one uint16_t number.
-// Useful mostly when checking version numbers.
-#define DRACO_BITSTREAM_VERSION(MAJOR, MINOR) \
-  ((static_cast<uint16_t>(MAJOR) << 8) | MINOR)
-
 // Concatenated latest bit-stream version.
 static constexpr uint16_t kDracoPointCloudBitstreamVersion =
     DRACO_BITSTREAM_VERSION(kDracoPointCloudBitstreamVersionMajor,
@@ -41,7 +38,7 @@ static constexpr uint16_t kDracoMeshBitstreamVersion = DRACO_BITSTREAM_VERSION(
     kDracoMeshBitstreamVersionMajor, kDracoMeshBitstreamVersionMinor);
 
 // Currently, we support point cloud and triangular mesh encoding.
-// TODO() convert enum to enum class (safety, not performance).
+// TODO(draco-eng) Convert enum to enum class (safety, not performance).
 enum EncodedGeometryType {
   INVALID_GEOMETRY_TYPE = -1,
   POINT_CLOUD = 0,
@@ -115,13 +112,12 @@ enum PredictionSchemeTransformType {
 enum MeshTraversalMethod {
   MESH_TRAVERSAL_DEPTH_FIRST = 0,
   MESH_TRAVERSAL_PREDICTION_DEGREE = 1,
-  MESH_TRAVERSAL_RESERVED_1 = 2,
-  MESH_TRAVERSAL_RESERVED_2 = 3,
+  NUM_TRAVERSAL_METHODS
 };
 
 // List of all variant of the edgebreaker method that is used for compression
 // of mesh connectivity.
-enum MeshEdgeBreakerConnectivityEncodingMethod {
+enum MeshEdgebreakerConnectivityEncodingMethod {
   MESH_EDGEBREAKER_STANDARD_ENCODING = 0,
   MESH_EDGEBREAKER_PREDICTIVE_ENCODING = 1,  // Deprecated.
   MESH_EDGEBREAKER_VALENCE_ENCODING = 2,

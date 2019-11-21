@@ -50,7 +50,7 @@ class PointAttributeVectorOutputIterator {
     for (auto index = 0; index < attributes_.size(); index++) {
       const AttributeTuple &att = attributes_[index];
       required_decode_bytes = (std::max)(required_decode_bytes,
-                                         std::get<1>(att) * std::get<3>(att));
+                                         std::get<3>(att) * std::get<4>(att));
     }
     memory_.resize(required_decode_bytes);
     data_ = memory_.data();
@@ -95,15 +95,17 @@ class PointAttributeVectorOutputIterator {
       if (data_size != 4) {  // handle uint16_t, uint8_t
         // selectively copy data bytes
         uint8_t *data_counter = data_;
-        for (auto index = 0; index < num_components;
+        for (uint32_t index = 0; index < num_components;
              index += 1, data_counter += data_size) {
           std::memcpy(data_counter, data_source + index, data_size);
         }
         // redirect to copied data
         data_source = reinterpret_cast<uint32_t *>(data_);
       }
-      attribute->SetAttributeValue(attribute->mapped_index(point_id_),
-                                   data_source);
+      const AttributeValueIndex avi = attribute->mapped_index(point_id_);
+      if (avi >= static_cast<uint32_t>(attribute->size()))
+        return *this;
+      attribute->SetAttributeValue(avi, data_source);
     }
     return *this;
   }
@@ -265,7 +267,8 @@ bool KdTreeAttributesDecoder::DecodeDataNeededByPortableTransforms(
         AttributeQuantizationTransform transform;
         transform.SetParameters(quantization_bits, min_value.data(),
                                 num_components, max_value_dif);
-        const int num_transforms = attribute_quantization_transforms_.size();
+        const int num_transforms =
+            static_cast<int>(attribute_quantization_transforms_.size());
         if (!transform.TransferToAttribute(
                 quantized_portable_attributes_[num_transforms].get()))
           return false;
@@ -287,7 +290,8 @@ bool KdTreeAttributesDecoder::DecodeDataNeededByPortableTransforms(
   const uint32_t attribute_count = GetNumAttributes();
   uint32_t total_dimensionality = 0;  // position is a required dimension
   std::vector<AttributeTuple> atts(attribute_count);
-  for (auto attribute_index = 0; attribute_index < attribute_count;
+  for (auto attribute_index = 0;
+       static_cast<uint32_t>(attribute_index) < attribute_count;
        attribute_index += 1)  // increment the dimensionality as needed...
   {
     const int att_id = GetAttributeId(attribute_index);
@@ -334,7 +338,8 @@ bool KdTreeAttributesDecoder::DecodeDataNeededByPortableTransforms(
     if (!in_buffer->Decode(&num_points))
       return false;
 
-    for (auto attribute_index = 0; attribute_index < attribute_count;
+    for (auto attribute_index = 0;
+         static_cast<uint32_t>(attribute_index) < attribute_count;
          attribute_index += 1) {
       const int att_id = GetAttributeId(attribute_index);
       PointAttribute *const attr =
@@ -408,7 +413,8 @@ bool KdTreeAttributesDecoder::TransformAttributeBackToSignedType(
   std::vector<UnsignedType> unsigned_val(att->num_components());
   std::vector<SignedDataTypeT> signed_val(att->num_components());
 
-  for (AttributeValueIndex avi(0); avi < att->size(); ++avi) {
+  for (AttributeValueIndex avi(0); avi < static_cast<uint32_t>(att->size());
+       ++avi) {
     att->GetValue(avi, &unsigned_val[0]);
     for (int c = 0; c < att->num_components(); ++c) {
       // Up-cast |unsigned_val| to int32_t to ensure we don't overflow it for
@@ -426,7 +432,7 @@ bool KdTreeAttributesDecoder::TransformAttributesToOriginalFormat() {
   if (quantized_portable_attributes_.empty() && min_signed_values_.empty()) {
     return true;
   }
-  int num_processed_attributes = 0;
+  int num_processed_quantized_attributes = 0;
   int num_processed_signed_components = 0;
   // Dequantize attributes that needed it.
   for (int i = 0; i < GetNumAttributes(); ++i) {
@@ -456,10 +462,26 @@ bool KdTreeAttributesDecoder::TransformAttributesToOriginalFormat() {
       // transform and shared with the SequentialQuantizationAttributeDecoder.
 
       const PointAttribute *const src_att =
-          quantized_portable_attributes_[num_processed_attributes].get();
+          quantized_portable_attributes_[num_processed_quantized_attributes]
+              .get();
 
       const AttributeQuantizationTransform &transform =
-          attribute_quantization_transforms_[num_processed_attributes];
+          attribute_quantization_transforms_
+              [num_processed_quantized_attributes];
+
+      num_processed_quantized_attributes++;
+
+      if (GetDecoder()->options()->GetAttributeBool(
+              att->attribute_type(), "skip_attribute_transform", false)) {
+        // Attribute transform should not be performed. In this case, we replace
+        // the output geometry attribute with the portable attribute.
+        // TODO(ostava): We can potentially avoid this copy by introducing a new
+        // mechanism that would allow to use the final attributes as portable
+        // attributes for predictors that may need them.
+        att->CopyFrom(*src_att);
+        continue;
+      }
+
       // Convert all quantized values back to floats.
       const int32_t max_quantized_value =
           (1u << static_cast<uint32_t>(transform.quantization_bits())) - 1;
@@ -485,7 +507,6 @@ bool KdTreeAttributesDecoder::TransformAttributesToOriginalFormat() {
         att->buffer()->Write(out_byte_pos, att_val.get(), entry_size);
         out_byte_pos += entry_size;
       }
-      num_processed_attributes++;
     }
   }
   return true;

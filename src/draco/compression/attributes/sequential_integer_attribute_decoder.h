@@ -26,7 +26,7 @@ namespace draco {
 class SequentialIntegerAttributeDecoder : public SequentialAttributeDecoder {
  public:
   SequentialIntegerAttributeDecoder();
-  bool Initialize(PointCloudDecoder *decoder, int attribute_id) override;
+  bool Init(PointCloudDecoder *decoder, int attribute_id) override;
 
   bool TransformAttributeToOriginalFormat(
       const std::vector<PointIndex> &point_ids) override;
@@ -56,6 +56,8 @@ class SequentialIntegerAttributeDecoder : public SequentialAttributeDecoder {
   void PreparePortableAttribute(int num_entries, int num_components);
 
   int32_t *GetPortableAttributeData() {
+    if (portable_attribute()->size() == 0)
+      return nullptr;
     return reinterpret_cast<int32_t *>(
         portable_attribute()->GetAddress(AttributeValueIndex(0)));
   }

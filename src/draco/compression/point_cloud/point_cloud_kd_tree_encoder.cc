@@ -17,10 +17,10 @@
 
 namespace draco {
 
-bool PointCloudKdTreeEncoder::EncodeGeometryData() {
+Status PointCloudKdTreeEncoder::EncodeGeometryData() {
   const int32_t num_points = point_cloud()->num_points();
   buffer()->Encode(num_points);
-  return true;
+  return OkStatus();
 }
 
 bool PointCloudKdTreeEncoder::GenerateAttributesEncoder(int32_t att_id) {
@@ -33,6 +33,10 @@ bool PointCloudKdTreeEncoder::GenerateAttributesEncoder(int32_t att_id) {
   // Add a new attribute to the attribute encoder.
   attributes_encoder(0)->AddAttributeId(att_id);
   return true;
+}
+
+void PointCloudKdTreeEncoder::ComputeNumberOfEncodedPoints() {
+  set_num_encoded_points(point_cloud()->num_points());
 }
 
 }  // namespace draco

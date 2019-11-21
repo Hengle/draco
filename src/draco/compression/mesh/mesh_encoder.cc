@@ -16,17 +16,18 @@
 
 namespace draco {
 
-MeshEncoder::MeshEncoder() : mesh_(nullptr) {}
+MeshEncoder::MeshEncoder() : mesh_(nullptr), num_encoded_faces_(0) {}
 
 void MeshEncoder::SetMesh(const Mesh &m) {
   mesh_ = &m;
   SetPointCloud(m);
 }
 
-bool MeshEncoder::EncodeGeometryData() {
-  if (!EncodeConnectivity())
-    return false;
-  return true;
+Status MeshEncoder::EncodeGeometryData() {
+  DRACO_RETURN_IF_ERROR(EncodeConnectivity());
+  if (options()->GetGlobalBool("store_number_of_encoded_faces", false))
+    ComputeNumberOfEncodedFaces();
+  return OkStatus();
 }
 
 }  // namespace draco

@@ -16,7 +16,7 @@
 
 #include "draco/compression/attributes/linear_sequencer.h"
 #include "draco/compression/attributes/sequential_attribute_decoders_controller.h"
-#include "draco/core/symbol_decoding.h"
+#include "draco/compression/entropy/symbol_decoding.h"
 #include "draco/core/varint_decoding.h"
 
 namespace draco {
@@ -32,6 +32,7 @@ bool MeshSequentialDecoder::DecodeConnectivity() {
       return false;
     if (!buffer()->Decode(&num_points))
       return false;
+
   } else
 #endif
   {
@@ -58,7 +59,7 @@ bool MeshSequentialDecoder::DecodeConnectivity() {
   } else {
     if (num_points < 256) {
       // Decode indices as uint8_t.
-      for (int i = 0; i < num_faces; ++i) {
+      for (uint32_t i = 0; i < num_faces; ++i) {
         Mesh::Face face;
         for (int j = 0; j < 3; ++j) {
           uint8_t val;
@@ -70,7 +71,7 @@ bool MeshSequentialDecoder::DecodeConnectivity() {
       }
     } else if (num_points < (1 << 16)) {
       // Decode indices as uint16_t.
-      for (int i = 0; i < num_faces; ++i) {
+      for (uint32_t i = 0; i < num_faces; ++i) {
         Mesh::Face face;
         for (int j = 0; j < 3; ++j) {
           uint16_t val;
@@ -83,7 +84,7 @@ bool MeshSequentialDecoder::DecodeConnectivity() {
     } else if (mesh()->num_points() < (1 << 21) &&
                bitstream_version() >= DRACO_BITSTREAM_VERSION(2, 2)) {
       // Decode indices as uint32_t.
-      for (int i = 0; i < num_faces; ++i) {
+      for (uint32_t i = 0; i < num_faces; ++i) {
         Mesh::Face face;
         for (int j = 0; j < 3; ++j) {
           uint32_t val;
@@ -95,7 +96,7 @@ bool MeshSequentialDecoder::DecodeConnectivity() {
       }
     } else {
       // Decode faces as uint32_t (default).
-      for (int i = 0; i < num_faces; ++i) {
+      for (uint32_t i = 0; i < num_faces; ++i) {
         Mesh::Face face;
         for (int j = 0; j < 3; ++j) {
           uint32_t val;
@@ -130,7 +131,7 @@ bool MeshSequentialDecoder::DecodeAndDecompressIndices(uint32_t num_faces) {
   // See MeshSequentialEncoder::CompressAndEncodeIndices() for more details.
   int32_t last_index_value = 0;
   int vertex_index = 0;
-  for (int i = 0; i < num_faces; ++i) {
+  for (uint32_t i = 0; i < num_faces; ++i) {
     Mesh::Face face;
     for (int j = 0; j < 3; ++j) {
       const uint32_t encoded_val = indices_buffer[vertex_index++];

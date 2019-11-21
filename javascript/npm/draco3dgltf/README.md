@@ -12,10 +12,29 @@ The [GL Transmission Format (glTF)](https://github.com/KhronosGroup/glTF) is an 
 
 This package is a build for encoding/decoding [Draco mesh compression extension](https://github.com/KhronosGroup/glTF/pull/874) in glTF specification. It could be used to compress the meshes in glTF assets or to decode the buffer data that belongs to a Draco mesh compression extension. For more detail, please read the extension spec.
 
-TODO: Add glTF branch url.
+Draco github glTF branch URL: https://github.com/google/draco/tree/gltf_2.0_draco_extension
 
 News
 =======
+### Version 1.3.5 release
+* Added option to build Draco for Universal Scene Description
+* Code cleanup
+* Bug fixes
+
+### Version 1.3.4 release
+* Fixes for Unity
+
+### Version 1.3.3 release
+* Added ExpertEncoder to the JavaScript API
+  * Allows developers to set quantization options per attribute id
+* Bug fixes
+
+### Version 1.3.2 release
+* Bug fixes
+
+### Version 1.3.1 release
+* Fix issue with multiple attributes when skipping an attribute transform
+
 ### Version 1.3.0 release
 * Improved kD-tree based point cloud encoding
   * Now applicable to point clouds with any number of attributes

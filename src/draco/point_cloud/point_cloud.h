@@ -18,6 +18,8 @@
 #include "draco/draco_features.h"
 
 #include "draco/attributes/point_attribute.h"
+#include "draco/core/bounding_box.h"
+#include "draco/core/vector_d.h"
 #include "draco/metadata/geometry_metadata.h"
 
 namespace draco {
@@ -56,7 +58,9 @@ class PointCloud {
   const PointAttribute *GetAttributeByUniqueId(uint32_t id) const;
   int32_t GetAttributeIdByUniqueId(uint32_t unique_id) const;
 
-  int32_t num_attributes() const { return attributes_.size(); }
+  int32_t num_attributes() const {
+    return static_cast<int32_t>(attributes_.size());
+  }
   const PointAttribute *attribute(int32_t att_id) const {
     DRACO_DCHECK_LE(0, att_id);
     DRACO_DCHECK_LT(att_id, static_cast<int32_t>(attributes_.size()));
@@ -78,34 +82,46 @@ class PointCloud {
   // Creates and adds a new attribute to the point cloud. The attribute has
   // properties derived from the provided GeometryAttribute |att|.
   // If |identity_mapping| is set to true, the attribute will use identity
-  // mapping between point indices and attribute value indices (i.e., each point
-  // has a unique attribute value).
-  // If |identity_mapping| is false, the mapping between point indices and
-  // attribute value indices is set to explicit, and it needs to be initialized
-  // manually using the PointAttribute::SetPointMapEntry() method.
-  // |num_attribute_values| can be used to specify the number of attribute
-  // values that are going to be stored in the newly created attribute.
-  // Returns attribute id of the newly created attribute.
+  // mapping between point indices and attribute value indices (i.e., each
+  // point has a unique attribute value). If |identity_mapping| is false, the
+  // mapping between point indices and attribute value indices is set to
+  // explicit, and it needs to be initialized manually using the
+  // PointAttribute::SetPointMapEntry() method. |num_attribute_values| can be
+  // used to specify the number of attribute values that are going to be
+  // stored in the newly created attribute. Returns attribute id of the newly
+  // created attribute or -1 in case of failure.
   int AddAttribute(const GeometryAttribute &att, bool identity_mapping,
                    AttributeValueIndex::ValueType num_attribute_values);
 
-  // Assigns an attribute id to a given PointAttribute. If an attribute with the
-  // same attribute id already exists, it is deleted.
+  // Creates and returns a new attribute or nullptr in case of failure. This
+  // method is similar to AddAttribute(), except that it returns the new
+  // attribute instead of adding it to the point cloud.
+  std::unique_ptr<PointAttribute> CreateAttribute(
+      const GeometryAttribute &att, bool identity_mapping,
+      AttributeValueIndex::ValueType num_attribute_values) const;
+
+  // Assigns an attribute id to a given PointAttribute. If an attribute with
+  // the same attribute id already exists, it is deleted.
   virtual void SetAttribute(int att_id, std::unique_ptr<PointAttribute> pa);
 
   // Deletes an attribute with specified attribute id. Note that this changes
   // attribute ids of all subsequent attributes.
   virtual void DeleteAttribute(int att_id);
 
-#ifdef DRACO_ATTRIBUTE_DEDUPLICATION_SUPPORTED
+#ifdef DRACO_ATTRIBUTE_VALUES_DEDUPLICATION_SUPPORTED
   // Deduplicates all attribute values (all attribute entries with the same
   // value are merged into a single entry).
   virtual bool DeduplicateAttributeValues();
+#endif
 
+#ifdef DRACO_ATTRIBUTE_INDICES_DEDUPLICATION_SUPPORTED
   // Removes duplicate point ids (two point ids are duplicate when all of their
   // attributes are mapped to the same entry ids).
   virtual void DeduplicatePointIds();
 #endif
+
+  // Get bounding box.
+  BoundingBox ComputeBoundingBox() const;
 
   // Add metadata.
   void AddMetadata(std::unique_ptr<GeometryMetadata> metadata) {
@@ -166,7 +182,7 @@ class PointCloud {
   void set_num_points(PointIndex::ValueType num) { num_points_ = num; }
 
  protected:
-#ifdef DRACO_ATTRIBUTE_DEDUPLICATION_SUPPORTED
+#ifdef DRACO_ATTRIBUTE_INDICES_DEDUPLICATION_SUPPORTED
   // Applies id mapping of deduplicated points (called by DeduplicatePointIds).
   virtual void ApplyPointIdDeduplication(
       const IndexTypeVector<PointIndex, PointIndex> &id_map,

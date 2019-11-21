@@ -21,8 +21,8 @@
 #include "draco/compression/attributes/prediction_schemes/mesh_prediction_scheme_constrained_multi_parallelogram_shared.h"
 #include "draco/compression/attributes/prediction_schemes/mesh_prediction_scheme_encoder.h"
 #include "draco/compression/attributes/prediction_schemes/mesh_prediction_scheme_parallelogram_shared.h"
-#include "draco/core/bit_coders/rans_bit_encoder.h"
-#include "draco/core/shannon_entropy.h"
+#include "draco/compression/bit_coders/rans_bit_encoder.h"
+#include "draco/compression/entropy/shannon_entropy.h"
 #include "draco/core/varint_encoding.h"
 
 namespace draco {
@@ -87,10 +87,12 @@ class MeshPredictionSchemeConstrainedMultiParallelogramEncoder
     // TODO(ostava): This should be generalized in case we use other binary
     // coding scheme.
     const double entropy = ComputeBinaryShannonEntropy(
-        total_parallelogram, total_used_parallelograms);
+        static_cast<uint32_t>(total_parallelogram),
+        static_cast<uint32_t>(total_used_parallelograms));
 
     // Round up to the nearest full bit.
-    return ceil((double)total_parallelogram * entropy);
+    return static_cast<int64_t>(
+        ceil(static_cast<double>(total_parallelogram) * entropy));
   }
 
   // Struct that contains data used for measuring the error of each available
@@ -149,7 +151,7 @@ class MeshPredictionSchemeConstrainedMultiParallelogramEncoder
   // the edges are processed. For better compression, the flags are stored in
   // in separate contexts based on the number of available parallelograms at a
   // given vertex.
-  // TODO() reconsider std::vector<bool> (performance/space).
+  // TODO(draco-eng) reconsider std::vector<bool> (performance/space).
   std::vector<bool> is_crease_edge_[kMaxNumParallelograms];
   Mode selected_mode_;
 
@@ -166,7 +168,7 @@ bool MeshPredictionSchemeConstrainedMultiParallelogramEncoder<
     ComputeCorrectionValues(const DataTypeT *in_data, CorrType *out_corr,
                             int size, int num_components,
                             const PointIndex * /* entry_to_point_id_map */) {
-  this->transform().Initialize(in_data, size, num_components);
+  this->transform().Init(in_data, size, num_components);
   const CornerTable *const table = this->mesh_data().corner_table();
   const std::vector<int32_t> *const vertex_to_data_map =
       this->mesh_data().vertex_to_data_map();
@@ -209,7 +211,9 @@ bool MeshPredictionSchemeConstrainedMultiParallelogramEncoder<
   // We start processing the vertices from the end because this prediction uses
   // data from previous entries that could be overwritten when an entry is
   // processed.
-  for (int p = this->mesh_data().data_to_corner_map()->size() - 1; p > 0; --p) {
+  for (int p =
+           static_cast<int>(this->mesh_data().data_to_corner_map()->size()) - 1;
+       p > 0; --p) {
     const CornerIndex start_corner_id =
         this->mesh_data().data_to_corner_map()->at(p);
 
@@ -257,17 +261,19 @@ bool MeshPredictionSchemeConstrainedMultiParallelogramEncoder<
     // Variable for holding the best configuration that has been found so far.
     PredictionConfiguration best_prediction;
 
-    total_parallelograms[num_parallelograms - 1] += num_parallelograms;
     // Compute delta coding error (configuration when no parallelogram is
     // selected).
     const int src_offset = (p - 1) * num_components;
     error = ComputeError(in_data + src_offset, in_data + dst_offset,
                          &current_residuals[0], num_components);
 
-    int64_t new_overhead_bits =
-        ComputeOverheadBits(total_used_parallelograms[num_parallelograms - 1],
-                            total_parallelograms[num_parallelograms - 1]);
-    error.num_bits += new_overhead_bits;
+    if (num_parallelograms > 0) {
+      total_parallelograms[num_parallelograms - 1] += num_parallelograms;
+      const int64_t new_overhead_bits =
+          ComputeOverheadBits(total_used_parallelograms[num_parallelograms - 1],
+                              total_parallelograms[num_parallelograms - 1]);
+      error.num_bits += new_overhead_bits;
+    }
 
     best_prediction.error = error;
     best_prediction.configuration = 0;
@@ -284,7 +290,7 @@ bool MeshPredictionSchemeConstrainedMultiParallelogramEncoder<
       // Mark all parallelograms as excluded.
       std::fill(exluded_parallelograms,
                 exluded_parallelograms + num_parallelograms, true);
-      // TODO(scottgodfrey) maybe this should be another std::fill.
+      // TODO(draco-eng) maybe this should be another std::fill.
       // Mark the first |num_used_parallelograms| as not excluded.
       for (int j = 0; j < num_used_parallelograms; ++j) {
         exluded_parallelograms[j] = false;
@@ -312,13 +318,15 @@ bool MeshPredictionSchemeConstrainedMultiParallelogramEncoder<
         }
         error = ComputeError(multi_pred_vals.data(), in_data + dst_offset,
                              &current_residuals[0], num_components);
-        new_overhead_bits = ComputeOverheadBits(
-            total_used_parallelograms[num_parallelograms - 1] +
-                num_used_parallelograms,
-            total_parallelograms[num_parallelograms - 1]);
+        if (num_parallelograms > 0) {
+          const int64_t new_overhead_bits = ComputeOverheadBits(
+              total_used_parallelograms[num_parallelograms - 1] +
+                  num_used_parallelograms,
+              total_parallelograms[num_parallelograms - 1]);
 
-        // Add overhead bits to the total error.
-        error.num_bits += new_overhead_bits;
+          // Add overhead bits to the total error.
+          error.num_bits += new_overhead_bits;
+        }
         if (error < best_prediction.error) {
           best_prediction.error = error;
           best_prediction.configuration = configuration;
@@ -331,8 +339,10 @@ bool MeshPredictionSchemeConstrainedMultiParallelogramEncoder<
       } while (std::next_permutation(
           exluded_parallelograms, exluded_parallelograms + num_parallelograms));
     }
-    total_used_parallelograms[num_parallelograms - 1] +=
-        best_prediction.num_used_parallelograms;
+    if (num_parallelograms > 0) {
+      total_used_parallelograms[num_parallelograms - 1] +=
+          best_prediction.num_used_parallelograms;
+    }
 
     // Update the entropy stream by adding selected residuals as symbols to the
     // stream.
@@ -380,8 +390,9 @@ bool MeshPredictionSchemeConstrainedMultiParallelogramEncoder<
       // Encode the crease edge flags in the reverse vertex order that is needed
       // be the decoder. Note that for the currently supported mode, each vertex
       // has exactly |num_used_parallelograms| edges that need to be encoded.
-      for (int j = is_crease_edge_[i].size() - num_used_parallelograms; j >= 0;
-           j -= num_used_parallelograms) {
+      for (int j = static_cast<int>(is_crease_edge_[i].size()) -
+                   num_used_parallelograms;
+           j >= 0; j -= num_used_parallelograms) {
         // Go over all edges of the current vertex.
         for (int k = 0; k < num_used_parallelograms; ++k) {
           encoder.EncodeBit(is_crease_edge_[i][j + k]);

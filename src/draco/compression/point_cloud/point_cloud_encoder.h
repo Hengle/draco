@@ -44,7 +44,14 @@ class PointCloudEncoder {
   // for mesh compression).
   virtual uint8_t GetEncodingMethod() const = 0;
 
-  int num_attributes_encoders() const { return attributes_encoders_.size(); }
+  // Returns the number of points that were encoded during the last Encode()
+  // function call. Valid only if "store_number_of_encoded_points" flag was set
+  // in the provided EncoderOptions.
+  size_t num_encoded_points() const { return num_encoded_points_; }
+
+  int num_attributes_encoders() const {
+    return static_cast<int>(attributes_encoders_.size());
+  }
   AttributesEncoder *attributes_encoder(int i) {
     return attributes_encoders_[i].get();
   }
@@ -52,12 +59,12 @@ class PointCloudEncoder {
   // Adds a new attribute encoder, returning its id.
   int AddAttributesEncoder(std::unique_ptr<AttributesEncoder> att_enc) {
     attributes_encoders_.push_back(std::move(att_enc));
-    return attributes_encoders_.size() - 1;
+    return static_cast<int>(attributes_encoders_.size() - 1);
   }
 
   // Marks one attribute as a parent of another attribute. Must be called after
   // all attribute encoders are created (usually in the
-  // AttributeEncoder::Initialize() method).
+  // AttributeEncoder::Init() method).
   bool MarkParentAttribute(int32_t parent_att_id);
 
   // Returns an attribute containing portable version of the attribute data that
@@ -78,7 +85,7 @@ class PointCloudEncoder {
   virtual bool EncodeEncoderData() { return true; }
 
   // Encodes any global geometry data (such as the number of points).
-  virtual bool EncodeGeometryData() { return true; }
+  virtual Status EncodeGeometryData() { return OkStatus(); }
 
   // encode all attribute values. The attribute encoders are sorted to resolve
   // any attribute dependencies and all the encoded data is stored into the
@@ -108,6 +115,13 @@ class PointCloudEncoder {
   // Encodes all the attribute data using the created attribute encoders.
   virtual bool EncodeAllAttributes();
 
+  // Computes and sets the num_encoded_points_ for the encoder.
+  virtual void ComputeNumberOfEncodedPoints() = 0;
+
+  void set_num_encoded_points(size_t num_points) {
+    num_encoded_points_ = num_points;
+  }
+
  private:
   // Encodes Draco header that is the same for all encoders.
   Status EncodeHeader();
@@ -135,6 +149,8 @@ class PointCloudEncoder {
   EncoderBuffer *buffer_;
 
   const EncoderOptions *options_;
+
+  size_t num_encoded_points_;
 };
 
 }  // namespace draco

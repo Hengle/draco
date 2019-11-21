@@ -13,7 +13,9 @@
 // limitations under the License.
 //
 #include "draco/compression/attributes/sequential_attribute_decoders_controller.h"
+#ifdef DRACO_NORMAL_ENCODING_SUPPORTED
 #include "draco/compression/attributes/sequential_normal_attribute_decoder.h"
+#endif
 #include "draco/compression/attributes/sequential_quantization_attribute_decoder.h"
 #include "draco/compression/config/compression_shared.h"
 
@@ -38,7 +40,7 @@ bool SequentialAttributeDecodersController::DecodeAttributesDecoderData(
     sequential_decoders_[i] = CreateSequentialDecoder(decoder_type);
     if (!sequential_decoders_[i])
       return false;
-    if (!sequential_decoders_[i]->Initialize(GetDecoder(), GetAttributeId(i)))
+    if (!sequential_decoders_[i]->Init(GetDecoder(), GetAttributeId(i)))
       return false;
   }
   return true;
@@ -89,16 +91,18 @@ bool SequentialAttributeDecodersController::
     if (GetDecoder()->options()) {
       const PointAttribute *const attribute =
           sequential_decoders_[i]->attribute();
-      if (GetDecoder()->options()->GetAttributeBool(
+      const PointAttribute *const portable_attribute =
+          sequential_decoders_[i]->GetPortableAttribute();
+      if (portable_attribute &&
+          GetDecoder()->options()->GetAttributeBool(
               attribute->attribute_type(), "skip_attribute_transform", false)) {
         // Attribute transform should not be performed. In this case, we replace
         // the output geometry attribute with the portable attribute.
         // TODO(ostava): We can potentially avoid this copy by introducing a new
         // mechanism that would allow to use the final attributes as portable
         // attributes for predictors that may need them.
-        sequential_decoders_[i]->attribute()->CopyFrom(
-            *sequential_decoders_[i]->GetPortableAttribute());
-        return true;
+        sequential_decoders_[i]->attribute()->CopyFrom(*portable_attribute);
+        continue;
       }
     }
     if (!sequential_decoders_[i]->TransformAttributeToOriginalFormat(
@@ -121,9 +125,11 @@ SequentialAttributeDecodersController::CreateSequentialDecoder(
     case SEQUENTIAL_ATTRIBUTE_ENCODER_QUANTIZATION:
       return std::unique_ptr<SequentialAttributeDecoder>(
           new SequentialQuantizationAttributeDecoder());
+#ifdef DRACO_NORMAL_ENCODING_SUPPORTED
     case SEQUENTIAL_ATTRIBUTE_ENCODER_NORMALS:
       return std::unique_ptr<SequentialNormalAttributeDecoder>(
           new SequentialNormalAttributeDecoder());
+#endif
     default:
       break;
   }

@@ -29,10 +29,24 @@ class EncoderBase {
  public:
   typedef EncoderOptionsT OptionsType;
 
-  EncoderBase() : options_(EncoderOptionsT::CreateDefaultOptions()) {}
+  EncoderBase()
+      : options_(EncoderOptionsT::CreateDefaultOptions()),
+        num_encoded_points_(0),
+        num_encoded_faces_(0) {}
+  virtual ~EncoderBase() {}
 
   const EncoderOptionsT &options() const { return options_; }
   EncoderOptionsT &options() { return options_; }
+
+  // If enabled, it tells the encoder to keep track of the number of encoded
+  // points and faces (default = false).
+  // Note that this can slow down encoding for certain encoders.
+  void SetTrackEncodedProperties(bool flag);
+
+  // Returns the number of encoded points and faces during the last encoding
+  // operation. Returns 0 if SetTrackEncodedProperties() was not set.
+  size_t num_encoded_points() const { return num_encoded_points_; }
+  size_t num_encoded_faces() const { return num_encoded_faces_; }
 
  protected:
   void Reset(const EncoderOptionsT &options) { options_ = options; }
@@ -47,31 +61,65 @@ class EncoderBase {
     options_.SetGlobalInt("encoding_method", encoding_method);
   }
 
+  void SetEncodingSubmethod(int encoding_submethod) {
+    options_.SetGlobalInt("encoding_submethod", encoding_submethod);
+  }
+
   Status CheckPredictionScheme(GeometryAttribute::Type att_type,
-                               int prediction_scheme) {
-    if (prediction_scheme < 0)
-      return Status(Status::ERROR, "Invalid prediction scheme requested.");
+                               int prediction_scheme) const {
+    // Out of bound checks:
+    if (prediction_scheme < PREDICTION_NONE)
+      return Status(Status::DRACO_ERROR,
+                    "Invalid prediction scheme requested.");
     if (prediction_scheme >= NUM_PREDICTION_SCHEMES)
-      return Status(Status::ERROR, "Invalid prediction scheme requested.");
+      return Status(Status::DRACO_ERROR,
+                    "Invalid prediction scheme requested.");
+    // Deprecated prediction schemes:
     if (prediction_scheme == MESH_PREDICTION_TEX_COORDS_DEPRECATED)
-      return Status(Status::ERROR,
+      return Status(Status::DRACO_ERROR,
                     "MESH_PREDICTION_TEX_COORDS_DEPRECATED is deprecated.");
+    if (prediction_scheme == MESH_PREDICTION_MULTI_PARALLELOGRAM)
+      return Status(Status::DRACO_ERROR,
+                    "MESH_PREDICTION_MULTI_PARALLELOGRAM is deprecated.");
+    // Attribute specific checks:
     if (prediction_scheme == MESH_PREDICTION_TEX_COORDS_PORTABLE) {
       if (att_type != GeometryAttribute::TEX_COORD)
-        return Status(Status::ERROR,
+        return Status(Status::DRACO_ERROR,
                       "Invalid prediction scheme for attribute type.");
     }
     if (prediction_scheme == MESH_PREDICTION_GEOMETRIC_NORMAL) {
-      if (att_type != GeometryAttribute::NORMAL)
-        return Status(Status::ERROR,
+      if (att_type != GeometryAttribute::NORMAL) {
+        return Status(Status::DRACO_ERROR,
                       "Invalid prediction scheme for attribute type.");
+      }
     }
-    return Status();
+    // TODO(hemmer): Try to enable more prediction schemes for normals.
+    if (att_type == GeometryAttribute::NORMAL) {
+      if (!(prediction_scheme == PREDICTION_DIFFERENCE ||
+            prediction_scheme == MESH_PREDICTION_GEOMETRIC_NORMAL)) {
+        return Status(Status::DRACO_ERROR,
+                      "Invalid prediction scheme for attribute type.");
+      }
+    }
+    return OkStatus();
   }
+
+ protected:
+  void set_num_encoded_points(size_t num) { num_encoded_points_ = num; }
+  void set_num_encoded_faces(size_t num) { num_encoded_faces_ = num; }
 
  private:
   EncoderOptionsT options_;
+
+  size_t num_encoded_points_;
+  size_t num_encoded_faces_;
 };
+
+template <class EncoderOptionsT>
+void EncoderBase<EncoderOptionsT>::SetTrackEncodedProperties(bool flag) {
+  options_.SetGlobalBool("store_number_of_encoded_points", flag);
+  options_.SetGlobalBool("store_number_of_encoded_faces", flag);
+}
 
 }  // namespace draco
 
